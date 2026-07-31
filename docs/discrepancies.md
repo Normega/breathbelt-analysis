@@ -207,6 +207,12 @@ that `direction_correct` was ported from.
 
 `App.tsx`, `components.tsx`, `functions.ts`, `constants.ts` and the `CONTEXT.md`
 that describes them are a superseded TypeScript app, not the live experiment.
+
+Provenance confirmed: they come from `github.com/Normega/breathbelt` ("Wireless
+respiration change detection"), a separate private repo created 2026-03-05 and
+last pushed 2026-03-12, which matches the legacy `CONTEXT.md` date of 2026-03-11.
+That repo is untouched. This project pushes to
+`github.com/Normega/breathbelt-analysis`.
 Its `CONTEXT.md` describes a single 10 to 20 s "natural breathing" block and no
 post block, which would have gutted H5 and H6 had it been believed. The live
 software has two 120 s blocks (`BASELINE_DURATION_MS = POST_BASELINE_DURATION_MS
