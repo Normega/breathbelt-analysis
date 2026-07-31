@@ -29,7 +29,7 @@ PATHS <- list(
   output_dir = file.path(BASE_DIR, "Analysis", "output")
 )
 
-for (f in c("seatmap.R", "acq_io.R", "pacer.R", "calibration.R", "prep_physio.R")) {
+for (f in c("seatmap.R", "acq_io.R", "trials.R", "pacer.R", "calibration.R", "prep_physio.R")) {
   source(file.path(BASE_DIR, "R", f))
 }
 

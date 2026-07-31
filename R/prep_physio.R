@@ -84,8 +84,16 @@ prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
     stop("Participant ", pid, ": expected exactly one session row, found ", nrow(sess))
   }
   tri <- belt_trials[as.character(belt_trials[[idcol]]) == pid, , drop = FALSE]
-  tri <- tri[order(tri$trial_onset_ms), , drop = FALSE]
   if (!nrow(tri)) stop("Participant ", pid, ": no trial records.")
+  # Seven of eighteen participants carry duplicate trial rows, in two forms.
+  # See R/trials.R. dedupe_trials sorts by onset and refuses to drop anything
+  # whose trial content disagrees.
+  n_raw <- nrow(tri)
+  tri   <- dedupe_trials(tri, pid, verbose = FALSE)
+  if (attr(tri, "n_dropped") > 0L) {
+    add_flag(sprintf("dropped %d duplicate trial record(s) of %d",
+                     attr(tri, "n_dropped"), n_raw))
+  }
   session_start_epoch_ms <- as.numeric(sess$session_start_epoch_ms[1])
 
   # -- 2. Seat and rig, resolved independently --------------------------------
