@@ -41,23 +41,60 @@ ok("continuous (both segments trough) at the 8000 ms boundary",
 ok("condition boundary is trial start + 2 base breaths = 8000 ms",
    abs((0 + 2 * 4000) - 8000) < 1e-9)
 
-# ── 3. Calibration window trimming ───────────────────────────────────────────
-cat("\n3. Calibration window\n")
-# Reproduce the 14542 geometry: 19.1 s of calib_breathe label over 16 s of pacing.
-n_fix <- round(0.9 * HZ); n_brt <- round(19.1 * HZ)
-ph <- c(rep("calib_fixation", n_fix), rep("calib_breathe", n_brt))
-tm <- ANCHOR + seq(-n_fix, n_brt - 1) * (1000 / HZ)
-anc <- calib_anchor_ms(ph, tm)
-ok("anchor lands within one packet (177 ms) of the true onset",
-   abs(anc - ANCHOR) < 177, sprintf("off by %.0f ms", abs(anc - ANCHOR)))
+# ── 3. Calibration window and repeat attempts ────────────────────────────────
+cat("
+3. Calibration window
+")
+# Build a realistic label stream. Phase is written once per 36-sample PACKET,
+# and per-sample times are back-assigned from the packet timestamp.
+#
+# This must run at the ACCELEROMETER rate (203.4 Hz, 4.916 ms per sample), not
+# the 25 Hz analysis grid: calib_anchor_ms operates on the raw accel table, and
+# a packet spans 36 x 4.916 = 177 ms, which is what sets the anchor tolerance.
+# Building the fixture at 25 Hz makes a packet 1440 ms wide and the tolerances
+# meaningless.
+MS_PER_SAMP <- 1000 / 203.4
+mk <- function(labels, secs, t0 = ANCHOR) {
+  ph <- c(); tm <- c(); pk <- c(); t <- t0
+  for (i in seq_along(labels)) {
+    for (j in seq_len(round(secs[i] * 203.4 / 36))) {
+      pt <- t + 36 * MS_PER_SAMP
+      ph <- c(ph, rep(labels[i], 36))
+      tm <- c(tm, t + seq_len(36) * MS_PER_SAMP)
+      pk <- c(pk, rep(pt, 36))
+      t  <- pt
+    }
+  }
+  list(phase = ph, t = tm, pkt = pk)
+}
+# Single attempt, 14542 geometry: 0.9 s fixation then 19.1 s of breathe label.
+one <- mk(c("calib_fixation", "calib_breathe"), c(0.9, 19.1))
+anc <- calib_anchor_ms(one$phase, one$t, one$pkt)
+ok("anchor lands within one packet (177 ms) of the fixation/breathe boundary",
+   abs(anc - (ANCHOR + 900)) < 177, sprintf("off by %.0f ms", abs(anc - (ANCHOR + 900))))
 w <- calib_fit_window(anc)
-ok("fit window is exactly 16000 ms", abs(unname(w[2] - w[1]) - 16000) < 1e-9)
-chk <- check_calib_window(ph, tm, pid = "synthetic")
-ok("overrun detected at about 3.1 s", abs(chk$overrun_ms - 3100) < 200,
+ok("fit window is exactly 4 x period", abs(unname(w[2] - w[1]) - 16000) < 1e-9)
+chk <- check_calib_window(one$phase, one$t, one$pkt, pid = "synthetic")
+ok("single attempt detected as one", chk$n_attempts == 1L)
+ok("overrun reported at about 3.1 s", abs(chk$overrun_ms - 3100) < 400,
    sprintf("got %.0f ms", chk$overrun_ms))
-short <- rep("calib_breathe", round(12 * HZ))
+
+# Two attempts, the 14425 case. The FIRST is the one the participant rejected.
+two <- mk(c("calib_fixation", "calib_breathe", "calib_fixation", "calib_breathe"),
+          c(0.9, 19.1, 0.9, 19.6))
+at <- calib_last_attempt(two$phase, two$t, two$pkt)
+ok("repeat calibration detected as TWO attempts, not dozens", at$n_attempts == 2L,
+   sprintf("got %d (a sample-level rle reports ~26)", at$n_attempts))
+anc2 <- calib_anchor_ms(two$phase, two$t, two$pkt)
+ok("anchors on the FINAL attempt, not the rejected first one",
+   anc2 > ANCHOR + 19000,
+   sprintf("anchor sits %.1f s in; the first attempt starts at 0.9 s", (anc2 - ANCHOR)/1000))
+ok("the two anchors differ by about one whole attempt",
+   abs((anc2 - anc) - 20000) < 1200, sprintf("differ by %.0f ms", anc2 - anc))
+
+short <- mk("calib_breathe", 12)
 ok("short calibration block fails loudly",
-   inherits(try(check_calib_window(short, seq_len(length(short)) * 40, "x"),
+   inherits(try(check_calib_window(short$phase, short$t, short$pkt, "x"),
                 silent = TRUE), "try-error"))
 
 # ── 4. Model recovery on synthetic axes ──────────────────────────────────────
