@@ -405,7 +405,43 @@ anchored cycles, not the single continuous sinusoid that `getPacerRadius`
 assumes. The software's own `fitBestModel` makes the same assumption, so live
 `calib_fit_r` values are degraded too.
 
-**Measured from recorded trial durations** (timing metadata only, no outcome).
+**CORRECTED 2026-07-31 after checking more participants. The first estimate below
+was 3.5x too large.** Three timing sources have to be separated:
+
+| source | excess over nominal | what it contains |
+|---|---|---|
+| software `trial_end - trial_onset` | ~1168 ms (SD 1 ms across all 18) | pacer + BOTH trigger round-trips |
+| hardware, BioPac code 10 to code 12 | ~620 ms | pacer + trigger edges |
+| Block 2, a 120 s timer with NO breath loop | ~285 ms | trigger edges only |
+
+Genuine pacer overshoot is therefore about `(620 - 285) / 4` = **84 ms per breath,
+about 2% of a 4000 ms period**, not the 292 ms per breath that software durations
+alone imply. `useTrialRunner` captures `trialStartMs` before `await
+sendTrigger(10)` and `trialEndMs` after `await sendTrigger(12)`, so roughly 548 ms
+of the software figure is HTTP round-trips to the parallel-port helper, not pacer
+time.
+
+Revised consequences, materially milder:
+
+- effective period about **4084 ms**, not 4000 and not 4292
+- condition boundary about **8168 ms**, not the 8000 the software records
+- H4 ground truth off by about **2%**, not 7%
+
+Uncertainty is not small: the trigger-edge cost is measured from
+`BaselineScreen`, which fires its start trigger WITHOUT `await`, whereas
+`useTrialRunner` awaits both. That leaves roughly plus or minus 50 ms per breath
+of uncertainty. The overshoot is real and positive; its exact size is not pinned
+down.
+
+**The pacer reconstruction itself is validated.** Two of the participants checked
+reach calibration fits of r = 0.86 and r = 0.83, which is not achievable with a
+materially wrong period or phase. The poor fits on 14542 (r = 0.24) and 16117
+(r = 0.29) are participant-level calibration quality, not a pipeline fault:
+14542's own live `calib_fit_r` was 0.518, likewise mediocre. An earlier draft of
+this entry over-read a single bad participant.
+
+**Original measurement, retained for the reasoning trail** (timing metadata only,
+no outcome).
 For a 4-breath trial, `trial_end - trial_onset = nominal + 4 * delta`. For 14542:
 
 | condition | mean duration | nominal | excess |
@@ -452,6 +488,56 @@ from r = 0.42 to about 0.61 and moves the estimated lag from an implausible
 of 4275 and 4850, so neither parameter is sharply identified from one
 participant. **Not tuned on pilot data pending Norm's decision.** Options are set
 out in the session notes.
+
+### B12. "Device lag" from calibration is not device lag
+
+Estimated lag against the reconstructed pacer came out NEGATIVE for every
+participant checked: -120, -280, -360 and -560 ms. That is systematic, not noise.
+
+Section 5.1 preregisters that lag "reflects signal transduction and processing,
+so it should be positive and of the order of a few hundred milliseconds", and
+flags any negative value. **That premise looks wrong.** The quantity is a
+belt-signal-versus-PACER offset, which contains at least three components:
+
+- device transduction and filter delay, positive
+- **participant anticipation of the pacer, negative.** Anticipating a predictable
+  rhythmic cue is the standard finding in sensorimotor synchronisation, where
+  negative mean asynchrony of tens to a couple of hundred milliseconds is the
+  norm rather than the exception
+- residual pacer anchor error, either sign
+
+A consistently negative value is therefore the expected result, not an anomaly,
+and the preregistered flag will fire for essentially everyone.
+
+True device lag would need a belt-versus-BioPac comparison, which is blocked
+during the pilot, or a known mechanical input.
+
+**Action.** Either rename this quantity to something honest such as
+"belt-to-pacer offset" and drop the positivity expectation, or move the device
+lag sanity check to a belt-versus-BioPac estimate computed after the
+pre-registration is locked. Needs Norm's decision; the current check is not
+measuring what Section 5.1 says it measures.
+
+### B13. Trial-count mismatches in three of six participants checked
+
+The new guard, which refuses to align when trigger and record counts disagree,
+fired on half the participants tried:
+
+| participant | trial-start triggers | `belt_trials` rows |
+|---|---|---|
+| 3997 | 34 | 35 |
+| 14425 | 34 | 35 |
+| 13738 | 34 | **61** |
+
+13738 is the striking one. 61 records against 34 triggers suggests either a
+restarted session or duplicated rows. 17734 separately produced FOUR
+session-start codes where one or two is expected, which points the same way.
+
+These are genuine data anomalies, not pipeline faults, and each needs resolving
+before that participant can be aligned. Task 3 must handle them explicitly rather
+than truncating to the shorter of the two, which is what the old script did
+(`n_trials <- min(nrow(trial_start_events), nrow(belt_trials))`) and which would
+silently mis-pair every trial after the discrepancy.
 
 ### C5. Calibration fit and device lag are not independent
 

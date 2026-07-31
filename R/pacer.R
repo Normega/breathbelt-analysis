@@ -72,30 +72,64 @@ pacer_radius_trial <- function(t_ms, trial_start_ms, base_period_ms,
 # getPacerRadius assumes. The software's own fitBestModel makes the same
 # assumption, so live calib_fit_r values are degraded too.
 #
-# The overshoot is MEASURABLE from recorded timing alone. A trial is
-# n_base breaths at base_period plus n_cond at condition_period, so
+# MEASURING IT. Three timing sources must be separated, and conflating them
+# inflates the estimate by more than three-fold.
 #
-#     trial_end - trial_onset = nominal + (n_base + n_cond) * delta
+#   1. SOFTWARE trial duration, trial_end_ms - trial_onset_ms. Exceeds nominal by
+#      about 1168 ms, with an SD of 1 ms ACROSS ALL 18 PARTICIPANTS. But
+#      useTrialRunner captures trialStartMs BEFORE `await sendTrigger(10)` and
+#      trialEndMs AFTER `await sendTrigger(12)`, so this window contains two
+#      round-trips to the local parallel-port helper. About 548 ms of it is
+#      trigger I/O, not pacer time.
 #
-# giving delta directly. This uses only trial timing metadata: no outcome
-# quantity is involved.
+#   2. HARDWARE trial duration, BioPac code 10 to code 12. Exceeds nominal by
+#      about 620 ms, consistently across participants and conditions.
 #
-# Measured for 14542: delta = 276 ms per breath (SD 109 across 34 trials),
-# consistent across all three conditions. Reconstructing calibration at the
-# resulting 4276 ms rather than 4000 ms raises the fit from r = 0.42 to 0.58 and
-# moves the estimated device lag from an implausible -240 ms to -80 ms.
+#   3. Block 2 and Block 5 are 120,000 ms timers with start and end triggers and
+#      NO breath loop, so their hardware excess is PURE trigger-edge cost:
+#      about 285 ms.
+#
+# Genuine pacer overshoot is therefore roughly (620 - 285) / 4 breaths, i.e.
+# about 84 ms per breath, or 2% of a 4000 ms period. NOT the 292 ms per breath
+# that the software durations alone suggest.
+#
+# Revised consequences, materially milder than the first estimate:
+#   effective period    about 4084 ms, not 4000 and not 4292
+#   condition boundary  about 8168 ms, not the 8000 the software records
+#   H4 ground truth     off by about 2%, not 7%
+#
+# UNCERTAINTY, stated because it is not small. The trigger-edge cost is measured
+# from BaselineScreen, which fires its start trigger WITHOUT await, whereas
+# useTrialRunner awaits both. The edge costs may therefore differ, leaving
+# roughly plus or minus 50 ms per breath of uncertainty in the decomposition.
+# The overshoot is real and positive; its exact size is not pinned down.
 
-# Per-breath pacer overshoot, in ms, estimated from recorded trial durations.
+# Fixed per-block trigger cost, measured from Block 2 (a 120,000 ms timer with
+# start and end triggers and no breath loop): about 285 ms.
+TRIGGER_EDGE_MS <- 285
+# Additional trigger I/O captured by the SOFTWARE timestamps but outside the
+# hardware pulse-to-pulse window: about 548 ms per trial.
+SOFTWARE_TRIGGER_OVERHEAD_MS <- 548
+
+# Per-breath pacer overshoot, in ms.
+# `trigger_edge_ms` is the fixed per-block trigger cost measured from the
+# no-breath-loop baseline blocks. Pass 0 to get the raw, uncorrected figure.
 estimate_pacer_overshoot <- function(trials, n_breaths = 4L,
-                                     n_base = 2L, base_period_ms = 4000) {
+                                     n_base = 2L, base_period_ms = 4000,
+                                     trigger_edge_ms = TRIGGER_EDGE_MS,
+                                     hardware_durations = NULL) {
   need <- c("trial_onset_ms", "trial_end_ms", "breath_period_ms")
   if (!all(need %in% names(trials))) {
     stop("estimate_pacer_overshoot needs columns: ", paste(need, collapse = ", "))
   }
-  dur     <- trials$trial_end_ms - trials$trial_onset_ms
+  # Prefer hardware (trigger-to-trigger) durations. Software durations include
+  # two trigger round-trips and overstate the overshoot by roughly 3.5-fold.
+  dur <- if (!is.null(hardware_durations)) hardware_durations else {
+    trials$trial_end_ms - trials$trial_onset_ms - SOFTWARE_TRIGGER_OVERHEAD_MS
+  }
   nominal <- n_base * base_period_ms +
              (n_breaths - n_base) * trials$breath_period_ms
-  delta   <- (dur - nominal) / n_breaths
+  delta   <- (dur - nominal - trigger_edge_ms) / n_breaths
   delta   <- delta[is.finite(delta)]
   if (!length(delta)) stop("No usable trial durations for overshoot estimation.")
   list(
