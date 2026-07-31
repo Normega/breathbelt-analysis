@@ -102,10 +102,18 @@ rig rather than assumed.
 while the software was left on its `Biopac_Right` default. If so the trigger went
 to port `0xD030` unshifted while respiration was recorded on the left channel.
 
-This is empirically decidable without touching outcome data: decode 14425's
-trigger channel and see whether codes appear as 1 to 13 or as multiples of 16.
+**Resolved in principle, Norm 2026-07-31.** No run sheet is available, but the
+trigger codes are authoritative and the two rigs use completely orthogonal code
+sets: right emits 1 to 13, left emits multiples of 16 (16 to 208). The sets do
+not overlap, which is what lets two simultaneously running participants share a
+recording and still be separated.
 
-**Action.** Resolve during Task 3. Check the run sheet if one exists.
+**Action.** In Task 3, decode each session's trigger channel and derive the rig
+from the observed code set rather than trusting `trigger_device`. Reconcile
+against the ACQ filename seat and fail loudly on any participant where the three
+sources do not agree. For 14425 specifically, the rig that emitted the triggers
+and the seat that carried the respiration signal may genuinely differ, so resolve
+them independently rather than assuming one implies the other.
 
 ### B4. Two ACQ files contain two study participants each
 
@@ -138,6 +146,35 @@ right-seat ID, so a strict `L\d+\.R\d+\.acq` pattern breaks on it.
 **Action.** Build an explicit participant-to-seat-to-file map in `R/seatmap.R`
 rather than pattern-matching, and fail loudly on any participant that does not
 resolve to exactly one file and one seat.
+
+### B6. BioPac decimation has no anti-alias filter
+
+`R/prep_physio.R` decimates by stride:
+
+```r
+.downsample <- function(x, factor) x[seq(1L, length(x), by = as.integer(factor))]
+breath_ds <- .downsample(breath_raw, raw_hz / RESP_HZ)
+```
+
+Taking every 80th sample from 2000 Hz gives exactly 25.0 Hz, so the **rate is
+correct**. But there is no low-pass before the stride, so any content above
+12.5 Hz folds back into the retained band. Study 5 avoids this by using
+`signal::decimate`, whose internal Chebyshev anti-alias filter is why its
+`breath_pipeline.R` notes "no separate LP pass is needed before decimation".
+
+Whether this actually matters depends on the RSP100C's own low-pass setting. If
+the amplifier is already band-limited to 1 or 10 Hz, almost nothing survives to
+alias. **This is a concrete reason the outstanding RSP100C settings matter**, not
+just a documentation gap.
+
+**Action.** Switch to `signal::decimate`, which removes the question regardless
+of the amplifier setting, and assert that `raw_hz %% RESP_HZ == 0` rather than
+letting `as.integer()` silently truncate a non-integer factor.
+
+Note that Study 5 ran at **25.641 Hz**, not 25.0, because it decimated 2000 Hz by
+78. BreathBelt uses 80 and is genuinely at 25.0 Hz. Any constant or threshold
+ported from Study 5 that is expressed in samples rather than seconds must be
+rescaled by 25.641/25.
 
 ---
 
@@ -196,8 +233,40 @@ Gwet's AC1 are preregistered as companion descriptives to make a prevalence
 artefact diagnosable rather than fatal.
 
 The base rate feeding the Task 6 margin derivation must be **assumed**, not taken
-from the pilot, per Section 5.12 note 5. Intended source is the Study 5 dataset
-that `direction_correct` was ported from.
+from the pilot, per Section 5.12 note 5. Source is Study 5, now vendored at
+`reference/study5_snapshot/`.
+
+### C4. H7's usable trial count is smaller than it looks, and its dropouts are informative
+
+From `Intero2025_BehaviourLedBreathAnalysis.R` around line 918, the ported
+definition is exactly as Section 4.3 describes:
+
+```r
+dur_12 <- mean(c(dur_b1, dur_b2), na.rm = TRUE)
+dur_34 <- mean(c(dur_b3, dur_b4), na.rm = TRUE)
+direction_correct <- sign(dur_34 - dur_12) == sign(delta)
+```
+
+Two consequences the power simulation must honour:
+
+**Catch trials are excluded.** The guard is `if (!is.na(delta) && delta != 0)`,
+so no-change trials never get a `direction_correct` value. Trials arrive in
+blocks of five with one catch trial, so H7's kappa rests on roughly **four fifths**
+of Phase 3 trials, not all of them. Simulating 25 trials per participant
+overstates H7's information by about 20%.
+
+**Device-specific dropout is the most important failure mode and is currently
+invisible.** `direction_correct` is NA when the breaths it needs were not
+detected. In a two-device comparison the accelerometer may fail to detect a
+breath where the stretch belt succeeds, producing a value on one device and NA on
+the other. Cohen's kappa needs complete pairs, so those trials silently drop out
+of the very analysis that is supposed to detect them. A device that yields no
+answer is not equivalent to one that yields the right answer.
+
+**Action.** Add to H7: report the rate of device-specific NA alongside kappa, and
+preregister it as part of the decision rather than as a footnote. Note also that
+`na.rm = TRUE` lets a pair mean be computed from a single detected breath, so
+partial detection degrades quietly rather than becoming NA.
 
 ---
 

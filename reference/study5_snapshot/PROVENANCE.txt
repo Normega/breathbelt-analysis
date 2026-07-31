@@ -1,0 +1,19 @@
+source:  github.com/Normega/BCAT2026
+commit:  97a151b8269a9814e649fa38f397a593fd110317
+pulled:  2026-07-31
+path:    Analysis/Study5
+
+Study 5 reference implementation. Two things BreathBelt depends on:
+
+  breath_pipeline.R
+    find_extrema / find_extrema_prominence / enforce_alternation and the
+    peak-trough walking refinement. Task 2 ports the trough detector from
+    here so the variance components describe the same signal the
+    confirmatory analysis sees.
+
+  Intero2025_BehaviourLedBreathAnalysis.R (around line 918)
+    direction_correct, which H7 tests for cross-device agreement. Also the
+    only legitimate source for its base rate, since Section 5.12 note 5
+    blocks effect sizes from the internal pilot.
+
+Read-only. Do not edit here.
