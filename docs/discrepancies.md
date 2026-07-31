@@ -113,12 +113,23 @@ mechanism: they write to different physical wires, right on the low nibble and
 left on the high nibble, which is what lets two simultaneously running
 participants share a recording and still be separated.
 
-**Action.** In Task 3, decode each session's trigger channel and derive the rig
-from the observed code set rather than trusting `trigger_device`. Reconcile
-against the ACQ filename seat and fail loudly on any participant where the three
-sources do not agree. For 14425 specifically, the rig that emitted the triggers
-and the seat that carried the respiration signal may genuinely differ, so resolve
-them independently rather than assuming one implies the other.
+**CLOSED 2026-07-31, empirically. No run sheet needed.**
+
+Seat and rig were resolved independently from the recording itself:
+
+| evidence | result |
+|---|---|
+| `Breath 2` active, `Breath 1` flat (sd 2.73 vs 0.0004) | seat = **LEFT** |
+| trigger codes on the **low** nibble | rig = **Biopac_Right** |
+
+So 14425 genuinely sat in the **left** seat while the **right** computer ran the
+session. Both sources were correct and they were describing different things. The
+ACQ filename was right about the seat, `trigger_device` was right about the rig,
+and the apparent conflict came from assuming one implies the other.
+
+This vindicates resolving the two independently in `R/seatmap.R`. Reading the
+respiration signal from the rig rather than the seat would have taken 14425's
+breathing from an empty channel.
 
 ### B4. Two ACQ files contain two study participants each
 
@@ -179,9 +190,31 @@ bandwidth of unknown value. That does not make aliasing likely, since respiratio
 transducers are inherently low-bandwidth, but it does mean the safety of stride
 decimation cannot currently be asserted from documentation.
 
-**Action.** Switch to `signal::decimate`, which removes the question regardless
-of the amplifier setting, and assert that `raw_hz %% RESP_HZ == 0` rather than
-letting `as.integer()` silently truncate a non-integer factor.
+**MEASURED 2026-07-31.** Rather than wait on the datasheet, the spectrum of a
+respiration channel was examined **above 5 Hz only**. Breathing lives at 0.1 to
+0.5 Hz and its harmonics die far below 5 Hz, so that band carries no respiratory
+information and this is purely an instrumentation question.
+
+Two findings, pulling in opposite directions:
+
+- **There is no anti-alias filter anywhere near 12.5 Hz.** Power does not roll
+  off; it *rises* toward the top of the range, with 37% of above-5 Hz power
+  sitting between 250 and 1000 Hz. Whatever bandwidth the datasheet quotes, the
+  recorded channel is broadband to at least 1 kHz.
+- **The aliasing that would actually matter is negligible.** Only content within
+  about 1 Hz of a multiple of 25 Hz folds into the 0.05 to 1.0 Hz analysis band.
+  Summed over the first 40 multiples, that is **-57 dB** relative to the
+  respiratory band, i.e. about 0.14% in amplitude. Mains at 60 Hz does not fold
+  in, being 10 Hz clear of the nearest multiple.
+
+So stride decimation was very probably harmless in practice, but only by luck of
+where the noise sits, not by design.
+
+**Action.** Switch to `signal::decimate` anyway: it costs nothing and removes a
+dependency on luck. Assert that `raw_hz %% RESP_HZ == 0` rather than letting
+`as.integer()` silently truncate a non-integer factor. Add the -57 dB check to
+the Task 3 batch QC so any participant with a noisier channel is caught rather
+than assumed to match 3997.
 
 Note that Study 5 ran at **25.641 Hz**, not 25.0, because it decimated 2000 Hz by
 78. BreathBelt uses 80 and is genuinely at 25.0 Hz. Any constant or threshold

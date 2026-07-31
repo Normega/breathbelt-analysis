@@ -61,6 +61,22 @@
 # idle. Subtracting an idle would also break on the dual-occupancy files, where
 # BOTH nibbles carry live codes at once and there is no single idle level.
 
+# Channel-to-seat mapping, VERIFIED empirically 2026-07-31 by checking which
+# respiration channel is active in files with exactly one seat occupied:
+#
+#   L0000.R3997   left empty, right occupied  -> Breath 1 active (sd 1.04 vs 0.0004)
+#   L14425.R0000  left occupied, right empty  -> Breath 2 active (sd 2.73 vs 0.0004)
+#   L17734.R14701 both occupied               -> both active
+#
+# Three orders of magnitude separate an occupied channel from a vacant one, so
+# occupancy is unambiguous. Note the ordering is NOT the intuitive one: channel 1
+# is the RIGHT seat.
+SEAT_CHANNELS <- list(
+  RIGHT = c(breath = "Breath 1", heart = "Heart 1"),
+  LEFT  = c(breath = "Breath 2", heart = "Heart 2")
+)
+TRIGGER_CHANNEL <- "Experiment Triggers"
+
 RIG_NIBBLE  <- c(Biopac_Right = "low", Biopac_Left = "high")
 RIG_SHIFT   <- c(Biopac_Right = 1L,    Biopac_Left = 16L)
 EVENT_CODES <- 1:13

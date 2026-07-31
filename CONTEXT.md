@@ -68,8 +68,8 @@ The `calib_breathe` label overruns the actual pacing by about 3.1 s because
 
   | # | Channel | Notes |
   |---|---|---|
-  | 0, 1 | `Breath 1`, `Breath 2` | Volts, one per seat |
-  | 2, 3 | `Heart 1`, `Heart 2` | mV, one per seat |
+  | 0, 1 | `Breath 1`, `Breath 2` | Volts. **1 = RIGHT seat, 2 = LEFT seat** |
+  | 2, 3 | `Heart 1`, `Heart 2` | mV, same seat ordering |
   | 4 to 11 | `Digital (STP Input 0..7)` | 0 or 5 V, the eight trigger lines |
   | 12 | `Experiment Triggers` | derived sum of the eight digital lines |
   | 13, 14 | `Human Heart Rate` | BPM, calculation channels |
