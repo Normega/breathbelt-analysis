@@ -176,6 +176,72 @@ Note that Study 5 ran at **25.641 Hz**, not 25.0, because it decimated 2000 Hz b
 ported from Study 5 that is expressed in samples rather than seconds must be
 rescaled by 25.641/25.
 
+### B7. The PCA calibration models can never be selected
+
+`fitBestModel` calls:
+
+```js
+const wp = solveLS3(pc1, pc1, pc1, tgt)
+```
+
+passing the **same column three times**. The design matrix is rank 2 of 4, so
+`solve4x4` hits its own `Math.abs(M[col][col]) < 1e-14` singularity guard and
+returns null, and the PCA branch is skipped. Verified by replicating `solveLS3`
+in R: returns NULL, rank 2 of 4.
+
+Consequences:
+
+- `pca-wide` and `pca-tight` have never been selected for any participant. The
+  "six candidate calibration models" of Section 4.5 and EH3 are in practice
+  **four**.
+- Even had it solved, only `wp[1]` is taken as the scalar coefficient while the
+  intended value is spread across three identical columns, so the scale would
+  have been wrong.
+
+`R/calibration.R` implements the PCA branch as intended and evaluates all six.
+**The offline selected model may therefore differ from
+`belt_sessions.calib_model_label`.** The offline label is the one EH3 and
+`selected_model_freq` should use.
+
+**For Norm.** Fixing this in radlab is a protocol change, not a bug fix, because
+participants collected after the fix would run under a different model-selection
+procedure from the 18 already collected. Since the offline refit is authoritative
+and the live weights only drive the on-screen preview, the cheapest correct move
+is to leave the software alone and let the offline pipeline decide. Flagged
+rather than actioned.
+
+### B8. Filtering the calibration window requires explicit edge padding
+
+Calibration is 16 s. A 0.05 Hz high-pass corner has a 20 s period, **longer than
+the data being filtered**, so a cold zero-state start distorts essentially the
+whole window.
+
+The software handles this with `oddExtend` and a 3000-sample pad, roughly 15 s at
+the 203 Hz accelerometer rate, citing a settling time of about five time
+constants. **R's `signal::filtfilt` does no such padding.**
+
+Measured on the synthetic fixture, filtering unpadded:
+
+| | unpadded | odd-extended |
+|---|---|---|
+| recovered lag (true 320 ms) | 160 ms | 360 ms |
+| reconstruction vs true breath | fails | 0.99 |
+
+`R/calibration.R` odd-extends explicitly. Any other script that band-passes a
+short window needs the same treatment; this is a standing hazard, not a one-off.
+
+### B9. The preregistered negative-lag check is vacuous on the live values
+
+`estimateLagMs` searches `for (shift = 0; shift <= maxShift)`, i.e. non-negative
+shifts only, to a maximum of 1500 ms. `belt_sessions.calib_lag_ms` is therefore
+non-negative **by construction**, and bounded at 1500 rather than 2000.
+
+Section 5.1 preregisters "flag any participant whose estimated lag is negative,
+or exceeds 1000 ms" and a search over plus or minus 2000 ms. Against the live
+values the negative half of that check can never fire. It only becomes meaningful
+against the offline refit, which searches symmetrically over the preregistered
+range. `R/calibration.R` does.
+
 ---
 
 ## C. Statistical
@@ -267,6 +333,58 @@ answer is not equivalent to one that yields the right answer.
 preregister it as part of the decision rather than as a footnote. Note also that
 `na.rm = TRUE` lets a pair mean be computed from a single detected breath, so
 partial detection degrades quietly rather than becoming NA.
+
+### C5. Calibration fit and device lag are not independent
+
+A perfect calibration model still scores only `cos(2*pi*lag/period)` when
+correlated against an unshifted pacer:
+
+| device lag | ceiling on calibration r |
+|---|---|
+| 200 ms | 0.951 |
+| 320 ms | 0.876 |
+| 500 ms | 0.707 |
+| 700 ms | 0.454 |
+
+At a 500 ms lag the ceiling sits exactly on the software's `SYNC_GOOD` threshold
+of 0.70, so a participant with a sound belt and an unremarkable lag is graded
+"Fair" on model quality they do not lack.
+
+This matters because **`calibration_fit` and `device_lag_ms` are both whitelisted
+inputs to the power simulation** (Section 1.7). Treating them as independent
+parameters double-counts one underlying quantity and will misstate the simulated
+spread of calibration quality.
+
+`R/calibration.R` now returns both `mlr_r_calib` (uncorrected, comparable to the
+live gate participants were actually held to) and `mlr_r_calib_lagcorr` (the
+model quality after removing the estimated lag). The extraction script should
+carry both, and the simulation should draw lag first and derive the fit ceiling
+from it rather than sampling the two independently.
+
+### C6. EH3 may be testing an arbitrary label
+
+The three accelerometer axes are three projections of one chest movement, so
+they are strongly collinear. Under collinearity many weight vectors reconstruct
+the breathing equally well, which has two consequences:
+
+- **The weights are not identified**, even when the reconstruction is excellent.
+  On the synthetic fixture the recovered weight direction bears no resemblance to
+  the true one while the reconstruction still correlates at 0.99. Nothing should
+  be interpreted from the coefficients themselves.
+- **The six models score within noise of each other.** On that same fixture all
+  six land within 0.014. When the spread is that small the "selected model" is
+  close to a coin flip.
+
+EH3 asks whether the selected model predicts subsequent agreement. If selection
+is arbitrary tie-breaking, EH3 is testing a near-random label and will find
+nothing regardless of whether the underlying idea is right.
+
+`fit_calibration` now returns `model_margin`, the gap between the winner and the
+runner-up. **Recommendation:** report the margin distribution alongside
+`selected_model_freq`, and preregister that EH3 is interpreted only where the
+margin is large enough for selection to be meaningful. Whether real data shows
+larger margins than the synthetic case is unknown and must not be checked before
+the extraction runs.
 
 ---
 
