@@ -343,7 +343,7 @@ Definitions for every term used in Section 3, with its source.
 | Term | Definition | Source | Status |
 |---|---|---|---|
 | **Stretch belt signal** | Respiration channel from the BioPac amplifier, recorded at 2000 Hz, decimated to 25 Hz. The active channel is identified by variance, not by slot position, because slot order does not reliably map to seat. | BioPac acquisition file | Defined |
-| **Accelerometer signal** | Single breathing waveform reconstructed from three-axis acceleration using participant-specific weights. Axes are band-pass filtered from 0.05 to 1.0 Hz, combined by the calibrated weights, then low-pass filtered at 0.6 Hz. All filters are 4th-order Butterworth applied forwards and backwards so no phase shift is introduced. | Accelerometer session file plus calibration weights | Defined |
+| **Accelerometer signal** | Single breathing waveform reconstructed from three-axis acceleration using participant-specific weights. Axes are band-pass filtered from 0.05 to 1.0 Hz, combined by the calibrated weights, then low-pass filtered at 0.6 Hz. All filters are Butterworth of **design order 4**, applied forwards and then backwards so no phase shift is introduced. See Section 5.1 for the full specification. | Accelerometer session file plus calibration weights | Defined |
 | **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three band-passed acceleration axes, fitted on the Block 1 calibration window only. Refitted offline; the weights computed live in the software are used only for the participant's on-screen preview. | Fitted from Block 1, approximately 3,900 samples | Defined |
 | **Pacer signal** | Sine wave at the commanded period, anchored to the recorded block or trial onset. Reconstructed analytically. The recorded pacer column is empty in the data files and is not used. | Software trial records | Defined |
 | **Common time base** | Both signals resampled to a uniform 25 Hz grid. Accelerometer sample times are reconstructed by back-assigning from each packet timestamp at 4.916 ms intervals, the empirically measured sample period. | Preprocessing | Defined |
@@ -417,7 +417,18 @@ Fixed in advance and applied identically to every participant.
 1. **Load and downsample.** Stretch belt from 2000 Hz to 25 Hz. Accelerometer resampled to the same 25 Hz grid.
 2. **Reconstruct accelerometer sample times.** Back-assign from each packet timestamp at 4.916 ms per sample, the measured rate. This replaces the nominal 5.000 ms, which introduces about 2.9 ms of error at the start of each packet.
 3. **Align the two recordings.** Match trial-start event codes to software trial onsets in recording order. Discard every event code occurring before the session-start code, which removes the setup verification cascade. Fit a linear correction across all matched trials. Extract each trial anchored on its own event code, so alignment error does not accumulate.
-4. **Filter.** Band-pass each acceleration axis from 0.05 to 1.0 Hz. Fourth-order Butterworth, applied forwards and backwards.
+4. **Filter.** Band-pass each acceleration axis from 0.05 to 1.0 Hz.
+
+   **Filter specification.** Stated precisely because "fourth-order, applied forwards and backwards" is ambiguous about whether the order is counted before or after the two passes.
+
+   - **Design order 4.** A 4th-order Butterworth is designed, then applied twice, once forwards and once backwards.
+   - Two passes give **zero phase distortion** and an **effective magnitude response of order 8**, i.e. roughly 48 dB per octave in the stopband, since the squared magnitude response of a 4th-order filter is that of an 8th-order one.
+   - In R: `signal::butter(n = 4, ...)` followed by `signal::filtfilt`. The reported order is the argument to `butter()`, not the effective order.
+   - The same convention applies to the 0.6 Hz low-pass and to the narrow 0.10 to 0.4 Hz band used by the tight calibration model variants.
+
+   This differs from the live software, which applies 2nd-order biquad sections under the same forwards-and-backwards scheme and is therefore effectively 4th order. The offline specification above is authoritative; the live filters exist only to drive the participant's on-screen preview.
+
+   **Edge handling.** Every zero-phase filter pass is preceded by odd-reflection padding of 15 seconds at each end, and the padding is discarded afterwards. This is not cosmetic. The calibration window is 16 s while the 0.05 Hz high-pass corner has a 20 s period, so an unpadded filter spends the entire window settling: in synthetic testing an unpadded pass recovered an injected 320 ms device lag as 160 ms and failed to recover the breathing direction at all. The live software pads for the same reason. `signal::filtfilt` in R does not pad by default, so the padding is applied explicitly.
 5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Block 1 window only. Apply to the whole session, then low-pass at 0.6 Hz.
 6. **Correct for lag.** Estimate device lag by cross-correlation over plus or minus 2000 ms, per participant, on the Block 1 window. Apply the same lag throughout the session.
 7. **Detect breath onsets.** Independently in each device's signal, using the same trough-detection rule.
