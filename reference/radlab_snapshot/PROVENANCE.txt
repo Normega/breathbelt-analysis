@@ -1,0 +1,7 @@
+source:  github.com/Normega/radlab
+commit:  98b2dca38bc86cf91a2e6fc906f05b781b9a0c8d
+pulled:  2026-07-31
+path:    src/games/{BreathBelt,shared/breath}
+
+Read-only copies of the files that define the experiment numerically.
+Do not edit here. Edit in radlab and re-pull.
