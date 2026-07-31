@@ -56,7 +56,8 @@ seat_map      <- suppressWarnings(build_seat_map(PATHS$acq_dir))
 message("Preprocessing ", length(ids), " participant(s).\n")
 results <- lapply(ids, function(pid) {
   tryCatch(
-    { r <- prep_one(pid, seat_map, belt_sessions, belt_trials, PATHS)
+    { r <- prep_one(pid, seat_map, belt_sessions, belt_trials, PATHS,
+                    quiet = length(ids) > 1L)
       list(pid = pid, ok = TRUE, flags = r$flags,
            model = r$belt$calib_model_label, lag = r$belt$calib_lag_ms) },
     error = function(e) {

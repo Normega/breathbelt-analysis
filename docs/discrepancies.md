@@ -539,6 +539,33 @@ than truncating to the shorter of the two, which is what the old script did
 (`n_trials <- min(nrow(trial_start_events), nrow(belt_trials))`) and which would
 silently mis-pair every trial after the discrepancy.
 
+### B14. Calibration can be repeated, and the first attempt is the rejected one
+
+`CalibReviewPanel` lets a participant redo calibration. The phase labels then
+read `fixation > breathe > fixation > breathe`, and **only the final run is the
+attempt they accepted**. Earlier runs were rejected precisely because the fit was
+poor.
+
+Anchoring on the first `calib_breathe` sample therefore fits the REJECTED
+attempt. One pilot participant, 14425, redid calibration. Correcting the anchor
+to the final attempt moves that participant from an unusable fit to
+**r = 0.934 with a +40 ms lag**, the first positive and physiologically plausible
+offset seen in the sample.
+
+Two implementation notes:
+
+- **Runs must be counted per PACKET, not per sample.** The phase label is written
+  once per BLE packet of 36 samples, and per-sample times are back-assigned from
+  the packet timestamp. Packet spans overlap, because the interval jitters around
+  177 ms while a packet covers about 172 ms, so sorting by sample time
+  interleaves adjacent packets and a sample-level `rle` reports dozens of
+  spurious runs at every boundary. 14425 first came out as "26 attempts" instead
+  of 2.
+- **The `calib_breathe` overrun is not diagnostic.** It covers model fitting AND
+  however long the participant spent on the review screen before accepting, so it
+  ranges from about 2 s to 27 s across the pilot sample with no bearing on data
+  quality. An earlier reading of that overrun as pure fitting time was wrong.
+
 ### C5. Calibration fit and device lag are not independent
 
 A perfect calibration model still scores only `cos(2*pi*lag/period)` when

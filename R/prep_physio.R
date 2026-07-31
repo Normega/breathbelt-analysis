@@ -69,8 +69,12 @@ apply_calibration <- function(x, y, z, fit, hz) {
 #'                       while the internal pilot protection is live: it
 #'                       computes a between-device correlation.
 #' @param write          write the RDS
+#' @param quiet          suppress per-participant calibration values. Batch runs
+#'                        set this: calibration fit and lag are whitelisted, but
+#'                        their DISTRIBUTION is the extraction script's job to
+#'                        report, not this script's console. Flags still print.
 prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
-                     sensitivity = FALSE, write = TRUE) {
+                     sensitivity = FALSE, write = TRUE, quiet = FALSE) {
   pid <- as.character(pid)
   message("[", pid, "] preprocessing")
   flags <- character(0)
@@ -216,25 +220,35 @@ prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
     add_flag(sprintf("implausible pacer overshoot %.0f ms/breath", over$delta_ms))
   }
 
-  chk    <- check_calib_window(accel$phase, accel$sample_ms, pid, period_ms = eff_per)
-  anchor <- calib_anchor_ms(accel$phase, accel$sample_ms)
+  chk    <- check_calib_window(accel$phase, accel$sample_ms, accel$packet_timestamp,
+                               pid, period_ms = eff_per)
+  anchor <- calib_anchor_ms(accel$phase, accel$sample_ms, accel$packet_timestamp)
   win    <- calib_fit_window(anchor, period_ms = eff_per)
-  .msg("calib_breathe spans %.0f ms; fitting %.0f ms (%.0f ms is model fitting, discarded)",
-       chk$span_ms, chk$paced_ms, chk$overrun_ms)
+  .msg("calib attempt %d of %d: spans %.0f ms, fitting %.0f ms (%.0f ms is model fitting plus review, discarded)",
+       chk$n_attempts, chk$n_attempts, chk$span_ms, chk$paced_ms, chk$overrun_ms)
+  if (chk$n_attempts > 1L) {
+    add_flag(sprintf("calibration repeated %d times; the final attempt is used",
+                     chk$n_attempts))
+  }
 
   cal_mask <- grid$epoch_ms >= win[["start_ms"]] & grid$epoch_ms <= win[["end_ms"]]
   fit <- fit_calibration(grid[cal_mask, c("epoch_ms", "x", "y", "z")] |>
                            stats::setNames(c("t_ms", "x", "y", "z")),
                          anchor_ms = anchor, period_ms = eff_per,
                          hz = RESP_HZ, target = "pacer", pid = pid)
-  if (!is.na(fit$calib_flag)) add_flag(fit$calib_flag)
-  if (fit$calib_lag_ms < 0 || fit$calib_lag_ms > 1000) {
-    add_flag(sprintf("device lag %.0f ms outside the expected 0 to 1000 ms range",
-                     fit$calib_lag_ms))
+  if (!is.na(fit$calib_flag)) {
+    add_flag(if (quiet) "low calibration fit (value withheld; see the extraction report)"
+             else fit$calib_flag)
   }
-  .msg("model=%s r=%.3f (lag-corrected %.3f) lag=%.0f ms margin=%.3f",
-       fit$calib_model_label, fit$mlr_r_calib, fit$mlr_r_calib_lagcorr,
-       fit$calib_lag_ms, fit$model_margin)
+  if (fit$calib_lag_ms < 0 || fit$calib_lag_ms > 1000) {
+    add_flag(if (quiet) "belt-to-pacer offset outside the expected range (see B12)"
+             else sprintf("belt-to-pacer offset %.0f ms outside the expected 0 to 1000 ms range",
+                          fit$calib_lag_ms))
+  }
+  if (quiet) .msg("calibration fitted (%s)", fit$calib_model_label)
+  else .msg("model=%s r=%.3f (lag-corrected %.3f) lag=%.0f ms margin=%.3f",
+            fit$calib_model_label, fit$mlr_r_calib, fit$mlr_r_calib_lagcorr,
+            fit$calib_lag_ms, fit$model_margin)
 
   applied <- apply_calibration(grid$x, grid$y, grid$z, fit, RESP_HZ)
   grid$x_bp <- applied$x_bp; grid$y_bp <- applied$y_bp; grid$z_bp <- applied$z_bp

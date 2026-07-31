@@ -176,19 +176,63 @@ CALIB_PACED_MS     <- CALIB_N_CYCLES * CALIB_PERIOD_MS   # 16000 NOMINAL only;
 # lag search absorbs it, which means `calib_lag_ms` carries roughly +/- 88 ms of
 # anchor uncertainty on top of genuine transduction delay. Recorded as a
 # limitation rather than silently ignored.
-calib_anchor_ms <- function(phase, t_ms) {
-  stopifnot(length(phase) == length(t_ms))
-  fix <- t_ms[phase == "calib_fixation"]
-  brt <- t_ms[phase == "calib_breathe"]
-  if (!length(brt)) stop("No calib_breathe samples: cannot anchor the pacer.")
-  first_breathe <- min(brt)
-  if (!length(fix)) {
-    warning("No calib_fixation samples; anchoring on first calib_breathe sample ",
-            "(one-sided bias of up to one packet, about 177 ms).")
-    return(first_breathe)
+# Locate the LAST calibration attempt.
+#
+# Participants may redo calibration from CalibReviewPanel, which returns to
+# FIXATION and paces again. The phase labels then read
+# fixation > breathe > fixation > breathe, and only the FINAL attempt is the one
+# they accepted; earlier runs are the attempts they rejected precisely because
+# the fit was poor.
+#
+# Anchoring on the first calib_breathe sample therefore fits the REJECTED
+# attempt. 14425 is one such participant in the pilot sample.
+#
+# Returns the fixation-to-breathe boundary and the extent of the final breathe
+# run, all in accelerometer epoch ms.
+# Runs MUST be counted per packet, not per sample. The phase label is written
+# once per BLE packet of 36 samples, and per-sample times are back-assigned from
+# the packet timestamp. Packets whose spans overlap (the interval jitters around
+# 177 ms while a packet covers ~172 ms) interleave once sorted by sample time, so
+# a sample-level rle reports dozens of spurious runs at every phase boundary:
+# 14425 came out as "26 attempts" instead of 2.
+calib_last_attempt <- function(phase, t_ms, packet) {
+  keep <- phase %in% c("calib_fixation", "calib_breathe")
+  if (!any(keep)) stop("No calibration phase labels present.")
+  ph <- phase[keep]; tt <- t_ms[keep]; pk <- packet[keep]
+  o  <- order(pk, tt); ph <- ph[o]; tt <- tt[o]; pk <- pk[o]
+
+  fi   <- !duplicated(pk)                    # one row per packet
+  r    <- rle(ph[fi]); pk_u <- pk[fi]
+  ends <- cumsum(r$lengths); strt <- ends - r$lengths + 1L
+  brt  <- which(r$values == "calib_breathe")
+  if (!length(brt)) stop("No calib_breathe packets: cannot anchor the pacer.")
+
+  k        <- brt[length(brt)]               # final breathe run
+  sel      <- pk %in% pk_u[strt[k]:ends[k]]
+  brt_start <- min(tt[sel]); brt_end <- max(tt[sel])
+
+  fix_end <- NA_real_
+  if (k > 1L && r$values[k - 1L] == "calib_fixation") {
+    fix_end <- max(tt[pk %in% pk_u[strt[k - 1L]:ends[k - 1L]]])
   }
-  last_fixation <- max(fix[fix < first_breathe])
-  (last_fixation + first_breathe) / 2
+  list(n_attempts = length(brt), brt_start = brt_start, brt_end = brt_end,
+       fix_end = fix_end, span_ms = brt_end - brt_start)
+}
+
+calib_anchor_ms <- function(phase, t_ms, packet) {
+  stopifnot(length(phase) == length(t_ms), length(phase) == length(packet))
+  at <- calib_last_attempt(phase, t_ms, packet)
+  if (at$n_attempts > 1L) {
+    message("    calibration was repeated ", at$n_attempts,
+            " times; anchoring on the final (accepted) attempt")
+  }
+  if (is.na(at$fix_end)) {
+    warning("No calib_fixation run immediately before the final calib_breathe ",
+            "run; anchoring on its first sample (one-sided bias up to ~177 ms).",
+            call. = FALSE)
+    return(at$brt_start)
+  }
+  (at$fix_end + at$brt_start) / 2
 }
 
 # Fit window as c(start_ms, end_ms).
@@ -210,17 +254,20 @@ calib_fit_window <- function(anchor_ms, period_ms = CALIB_PERIOD_MS,
 
 # Assert the recorded block is long enough to contain the full paced window, and
 # report the overrun so batch runs surface anything anomalous.
-check_calib_window <- function(phase, t_ms, pid = NA_character_,
+check_calib_window <- function(phase, t_ms, packet, pid = NA_character_,
                                period_ms = CALIB_PERIOD_MS,
                                n_cycles  = CALIB_N_CYCLES) {
-  brt <- t_ms[phase == "calib_breathe"]
-  if (!length(brt)) stop("Participant ", pid, ": no calib_breathe samples.")
-  span   <- max(brt) - min(brt)
+  at     <- calib_last_attempt(phase, t_ms, packet)
+  span   <- at$span_ms
   needed <- n_cycles * period_ms
   if (span < needed) {
     stop("Participant ", pid, ": calib_breathe spans ", round(span), " ms but ",
          needed, " ms of pacing is required. Calibration was cut short; this ",
          "participant cannot be calibrated against the pacer.")
   }
-  list(span_ms = span, paced_ms = needed, overrun_ms = span - needed)
+  # The remainder is model fitting PLUS however long the participant spent on the
+  # review screen before accepting, so it varies from ~2 s to ~27 s across the
+  # pilot sample and carries no diagnostic meaning.
+  list(span_ms = span, paced_ms = needed, overrun_ms = span - needed,
+       n_attempts = at$n_attempts)
 }
