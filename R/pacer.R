@@ -52,13 +52,78 @@ pacer_radius_trial <- function(t_ms, trial_start_ms, base_period_ms,
 }
 
 
+# ── Pacer overshoot ───────────────────────────────────────────────────────────
+#
+# THE PACER DOES NOT RUN AT ITS NOMINAL PERIOD.
+#
+# Both CalibrationScreen and useTrialRunner drive the pacer as
+#
+#     for (i = 0; i < n; i++) await startBreath(periodMs)
+#
+# and useBreathCycle.startBreath RE-ANCHORS the cycle clock on every call:
+#
+#     cycleStartRef.current = performance.now()
+#     return new Promise(r => setTimeout(r, durationMs))
+#
+# setTimeout fires no earlier than durationMs and usually later, and because each
+# cycle restarts its clock when the previous promise resolves, the overshoot
+# ACCUMULATES rather than averaging out. The pacer is therefore a sequence of
+# independently anchored cycles, not the single continuous sinusoid that
+# getPacerRadius assumes. The software's own fitBestModel makes the same
+# assumption, so live calib_fit_r values are degraded too.
+#
+# The overshoot is MEASURABLE from recorded timing alone. A trial is
+# n_base breaths at base_period plus n_cond at condition_period, so
+#
+#     trial_end - trial_onset = nominal + (n_base + n_cond) * delta
+#
+# giving delta directly. This uses only trial timing metadata: no outcome
+# quantity is involved.
+#
+# Measured for 14542: delta = 276 ms per breath (SD 109 across 34 trials),
+# consistent across all three conditions. Reconstructing calibration at the
+# resulting 4276 ms rather than 4000 ms raises the fit from r = 0.42 to 0.58 and
+# moves the estimated device lag from an implausible -240 ms to -80 ms.
+
+# Per-breath pacer overshoot, in ms, estimated from recorded trial durations.
+estimate_pacer_overshoot <- function(trials, n_breaths = 4L,
+                                     n_base = 2L, base_period_ms = 4000) {
+  need <- c("trial_onset_ms", "trial_end_ms", "breath_period_ms")
+  if (!all(need %in% names(trials))) {
+    stop("estimate_pacer_overshoot needs columns: ", paste(need, collapse = ", "))
+  }
+  dur     <- trials$trial_end_ms - trials$trial_onset_ms
+  nominal <- n_base * base_period_ms +
+             (n_breaths - n_base) * trials$breath_period_ms
+  delta   <- (dur - nominal) / n_breaths
+  delta   <- delta[is.finite(delta)]
+  if (!length(delta)) stop("No usable trial durations for overshoot estimation.")
+  list(
+    delta_ms   = stats::median(delta),   # median: robust to a stalled trial
+    delta_sd   = stats::sd(delta),
+    n_trials   = length(delta),
+    delta_mean = mean(delta)
+  )
+}
+
+# Effective condition boundary within a trial, accounting for overshoot.
+# The software records condition_onset_ms as exactly trial start + 8000 ms, which
+# ignores the overshoot on the two baseline breaths and is therefore early.
+condition_boundary_ms <- function(trial_start_ms, delta_ms,
+                                  n_base = 2L, base_period_ms = 4000) {
+  trial_start_ms + n_base * (base_period_ms + delta_ms)
+}
+
+
 # ── Calibration window ────────────────────────────────────────────────────────
 
 CALIB_N_CYCLES     <- 4L      # hard-coded loop in CalibrationScreen.jsx.
                               # NOT constants.js CALIB_CYCLES, which is 3 and
                               # is dead code, read by nothing.
 CALIB_PERIOD_MS    <- 4000    # BASE_BREATH_SPEED_S * 1000
-CALIB_PACED_MS     <- CALIB_N_CYCLES * CALIB_PERIOD_MS   # 16000
+CALIB_PACED_MS     <- CALIB_N_CYCLES * CALIB_PERIOD_MS   # 16000 NOMINAL only;
+# the realised duration is CALIB_N_CYCLES * (CALIB_PERIOD_MS + delta). Pass the
+# measured effective period to calib_fit_window() rather than relying on this.
 
 # Estimate the wall-clock instant the pacer animation began.
 #

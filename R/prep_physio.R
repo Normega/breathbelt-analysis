@@ -1,544 +1,307 @@
-# prep_physio_14542.R
+# prep_physio.R
 #
-# Extracts and time-locks respiration data for participant 14542.
-# Produces one RDS per participant containing:
-#   - BioPac breath signal (Ch0, right seat) downsampled to 25 Hz
-#   - BioPac HR derived signal (Ch13, right seat) downsampled to 250 Hz
-#   - Wireless belt accel: raw x/y/z + vector magnitude + mlr-wide-lp estimate,
-#     both reconstructed to per-sample timestamps and interpolated to 25 Hz grid
-#   - Per-trial epochs with belt + BioPac segments time-locked to BioPac
-#     trial-start trigger (val=250, code 10), with condition_onset_ms from
-#     belt_trials used as baseline->condition boundary (BioPac code 11 / val=251
-#     was removed from the experiment to reduce animation lag)
-#   - Alignment diagnostics: per-trial BioPac<->belt offset and linear drift fit
+# Per-participant preprocessing: time-lock the BioPac stretch belt and the Polar
+# H10 accelerometer onto a common 25 Hz grid, and fit the accelerometer's
+# breathing transformation against the RECONSTRUCTED PACER.
 #
-# Alignment strategy:
-#   BioPac has no absolute epoch clock. Alignment uses BioPac trial-start
-#   triggers (val=250) matched by order to belt_trials$trial_onset_ms.
-#   A linear drift correction is fit across all 34 triggers (empirically ~384ms
-#   total drift over the session). Each trial segment is extracted using the
-#   BioPac trigger sample directly as the zero point, avoiding accumulated error.
+# Entry point is prep_one(pid, ...). Batch driver is scripts/01_batch_prep.R.
 #
-# MLR-wide-lp reconstruction:
-#   The winning model label (mlr-wide-lp) is stored in belt_sessions but
-#   calibration weights are not exported. Weights are re-fit here using the
-#   pre-baseline accel data (phase == "baseline") regressed onto the BioPac
-#   breath signal interpolated to the same 25 Hz grid. Wide bandpass = 0.05-1.0
-#   Hz; LP post-smooth = 0.6 Hz. Comparison against vector magnitude allows
-#   evaluation of whether MLR adds meaningful convergence with the BioPac signal.
+# ── DISCLOSURE CONTROL ────────────────────────────────────────────────────────
 #
-# ── File conventions ──────────────────────────────────────────────────────────
-# ACQ filename: L<leftID>_<rightID>.acq  (no R prefix on right ID in this study)
-#   Left seat  = absent participant (16549) -> Ch0 Breath1, Ch2 Heart1 (blank)
-#   Right seat = participant 14542          -> Ch0 Breath1, Ch13 Human Heart Rate
-#   NOTE: channel assignment differs from 05_prep_physio.R precedent; this
-#   study uses computed HR (Ch13/Ch15) not raw ECG (Ch2/Ch3).
-# Trigger encoding: Biopac_Right, shift=1 (code sent as-is)
-#   val=240 = line clear (baseline); val=250 = trial start; val=252 = trial end
-#   val=251 (condition onset) absent -- use condition_onset_ms from belt_trials
+# THIS SCRIPT COMPUTES NO AGREEMENT QUANTITY, AND MUST NOT.
+#
+# The version this replaces computed a per-trial correlation between the
+# accelerometer reconstruction and the BioPac breath signal (`r_mlr_vs_biopac`),
+# stored it per trial and in an `r_summary` table, and PRINTED its mean, SD and
+# median to the console on every run.
+#
+# That is a between-device correlation. Section 1.7 blocks "any agreement
+# coefficient" and "any correlation" because they are H2, H5 and H7 test
+# statistics. Running the old script across the 18 pilot participants would have
+# printed device-agreement statistics to the terminal and destroyed the internal
+# pilot protection permanently, with no way to undo it.
+#
+# Both are removed. The RDS carries signals and timing only. Agreement is
+# computed downstream, in the confirmatory analysis, after the pre-registration
+# is locked.
+#
+# The one sanctioned exception is the BioPac-target sensitivity fit described in
+# Section 5.1, which necessarily correlates the two devices. It is OFF by default
+# and must never be enabled while the internal pilot protection is live.
+#
+# Requires: tidyverse, signal, reticulate, zoo.
+# Sourced by scripts/; installs nothing.
 
-# ── Set Up ────────────────────────────────────────────────────────────────────
-packages <- c("tidyverse", "signal", "reticulate", "zoo")
-new_packages <- packages[!sapply(packages, requireNamespace, quietly = TRUE)]
-if (length(new_packages)) install.packages(new_packages)
-options(readr.show_col_types = FALSE)
-for (thispack in packages) {
-  library(thispack, character.only = TRUE, quietly = TRUE, verbose = FALSE)
-}
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-# Script lives in: <BASE>/Analysis/
-# Data lives in:   <BASE>/Data/
-BASE_DIR   <- file.path("I:", "Shared drives", "Behavioral Interoception",
-                        "Summer2026_CompareBelts")
-DATA_DIR   <- file.path(BASE_DIR, "Data")
-ACQ_DIR    <- file.path(DATA_DIR, "acq_physio")
-BT_DIR     <- file.path(DATA_DIR, "bt_physio")
-TABLES_DIR <- file.path(DATA_DIR, "tables")
-OUTPUT_DIR <- file.path(BASE_DIR, "Analysis", "output")
-dir.create(OUTPUT_DIR, recursive = TRUE, showWarnings = FALSE)
+RESP_HZ <- 25L      # target respiration rate
+CARD_HZ <- 250L     # target cardiac rate
 
-PID <- "14542"
+# Event codes (see CONTEXT.md). Decoded values, not raw channel values.
+CODE_SESSION_START <- 1L
+CODE_TRIAL_START   <- 10L
+CODE_TRIAL_END     <- 12L
 
-# ACQ filename convention: L<leftID>_<rightID>.acq (underscore separator)
-# Match by right-seat ID; errors if none found, warns if multiple match
-acq_candidates <- list.files(ACQ_DIR,
-                             pattern     = paste0(".", PID, "\\.acq$"),
-                             full.names  = TRUE,
-                             ignore.case = TRUE)
-if (length(acq_candidates) == 0) stop("No ACQ file found for participant ", PID)
-if (length(acq_candidates)  > 1) warning("Multiple ACQ files matched for ", PID,
-                                         "; using first: ", acq_candidates[1])
-ACQ_FILE <- acq_candidates[1]
-
-# Belt accel: <PID>_session<N>_accel.csv -- use first session match
-accel_candidates <- list.files(BT_DIR,
-                               pattern     = paste0("^", PID, "_session\\d+_accel\\.csv$"),
-                               full.names  = TRUE,
-                               ignore.case = TRUE)
-if (length(accel_candidates) == 0) stop("No accel CSV found for participant ", PID)
-if (length(accel_candidates)  > 1) warning("Multiple accel files matched for ", PID,
-                                           "; using first: ", accel_candidates[1])
-ACCEL_FILE <- accel_candidates[1]
-
-TRIALS_FILE   <- file.path(TABLES_DIR, "belt_trials.csv")
-SESSIONS_FILE <- file.path(TABLES_DIR, "belt_sessions.csv")
-OUTPUT_FILE   <- file.path(OUTPUT_DIR, paste0(PID, "_physio.rds"))
-
-# ── Constants ─────────────────────────────────────────────────────────────────
-BIOPAC_HZ    <- 2000L    # raw BioPac sample rate
-RESP_HZ      <- 25L      # target respiration rate
-CARD_HZ      <- 250L     # target cardiac rate
-ACCEL_HZ_NOM <- 200L     # nominal belt accel rate (actual ~203 Hz; use for grid)
-SAMPLES_PER_PACKET <- 36L
-MS_PER_SAMPLE      <- 1000 / ACCEL_HZ_NOM  # 5 ms
-
-# BioPac trigger values (Biopac_Right, shift=1)
-TRIG_TRIAL_START <- 250L
-TRIG_TRIAL_END   <- 252L
-TRIG_CLEAR       <- 240L
-
-# Bandpass specs for wide model: 0.05–1.0 Hz
-WIDE_BP_LOW  <- 0.05
-WIDE_BP_HIGH <- 1.00
-LP_CUTOFF    <- 0.60     # post-smooth for mlr-wide-lp
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-# Integer-factor decimation (keep every Nth sample, matching 05_prep_physio.R)
-.downsample <- function(x, factor) x[seq(1L, length(x), by = as.integer(factor))]
+.msg <- function(...) message("  ", sprintf(...))
 
-# Zero-phase Butterworth filter via signal::filtfilt
-.butter_filter <- function(x, low, high, hz, order = 4L) {
-  nyq <- hz / 2
-  bf  <- signal::butter(order, c(low / nyq, high / nyq), type = "pass")
-  signal::filtfilt(bf, x)
+# Apply a fitted calibration to a full session of raw axes.
+apply_calibration <- function(x, y, z, fit, hz) {
+  b  <- CALIB_BANDS[[fit$band]]
+  xf <- bp_filter(x, b["low"], b["high"], hz)
+  yf <- bp_filter(y, b["low"], b["high"], hz)
+  zf <- bp_filter(z, b["low"], b["high"], hz)
+  pred <- fit$bias + fit$weights[1] * xf + fit$weights[2] * yf + fit$weights[3] * zf
+  if (isTRUE(fit$smooth)) pred <- lp_filter(pred, hz = hz)
+  list(pred = pred, x_bp = xf, y_bp = yf, z_bp = zf)
 }
 
-.butter_lp <- function(x, cutoff, hz, order = 4L) {
-  nyq <- hz / 2
-  bf  <- signal::butter(order, cutoff / nyq, type = "low")
-  signal::filtfilt(bf, x)
-}
 
-# Extract trigger onsets: sample index + time + code.
-# clear_val: the resting/baseline value of the trigger channel between events.
-#   AD_BBT:      clear = 0   (line writes 0x00 between pulses)
-#   Biopac_Right: clear = 240 (parallel port idles at 0xF0 between pulses)
-#   Biopac_Left:  clear = 240 (same parallel port idle)
-# An onset is any transition FROM clear_val TO a different value.
-.trigger_onsets <- function(trig, hz, clear_val = 0L) {
-  prev <- c(clear_val, trig[-length(trig)])
-  idx  <- which(prev == clear_val & trig != clear_val)
-  data.frame(sample_idx = idx, time_sec = idx / hz, code = trig[idx])
-}
+# ── prep_one ──────────────────────────────────────────────────────────────────
 
-# Reconstruct per-sample timestamps from BLE packet timestamps.
-# packet_timestamp is the epoch ms of the LAST sample in the packet.
-# Back-assign SAMPLES_PER_PACKET samples at MS_PER_SAMPLE intervals.
-.reconstruct_timestamps <- function(df) {
-  df |>
-    dplyr::group_by(packet_timestamp) |>
-    dplyr::mutate(
-      n_in_packet = dplyr::n(),
-      sample_ms   = packet_timestamp - (n_in_packet - 1 - sample_index) * MS_PER_SAMPLE
-    ) |>
-    dplyr::ungroup()
-}
+#' @param pid            participant ID, character
+#' @param seat_map       from build_seat_map()
+#' @param belt_sessions  full sessions table
+#' @param belt_trials    full trials table
+#' @param paths          list(acq_dir, bt_dir, output_dir)
+#' @param sensitivity    fit the BioPac-target model as well. MUST stay FALSE
+#'                       while the internal pilot protection is live: it
+#'                       computes a between-device correlation.
+#' @param write          write the RDS
+prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
+                     sensitivity = FALSE, write = TRUE) {
+  pid <- as.character(pid)
+  message("[", pid, "] preprocessing")
+  flags <- character(0)
+  add_flag <- function(f) flags <<- c(flags, f)
 
-# ── Step 1: Load tabular data ─────────────────────────────────────────────────
-message("Loading tabular data...")
-
-belt_sessions <- readr::read_csv(SESSIONS_FILE, show_col_types = FALSE) |>
-  dplyr::filter(participant_id == PID)
-
-belt_trials <- readr::read_csv(TRIALS_FILE, show_col_types = FALSE) |>
-  dplyr::filter(participant_id == PID) |>
-  dplyr::arrange(trial_onset_ms)
-
-session_start_epoch_ms <- belt_sessions$session_start_epoch_ms[1]
-message(sprintf("  Session start epoch: %s ms", session_start_epoch_ms))
-message(sprintf("  Trials: %d (phase2=%d, phase3=%d)",
-                nrow(belt_trials),
-                sum(belt_trials$phase == 2),
-                sum(belt_trials$phase == 3)))
-
-# ── Step 2: Load BioPac ───────────────────────────────────────────────────────
-message("Loading BioPac ACQ...")
-
-if (!reticulate::py_module_available("bioread")) {
-  message("  Installing bioread...")
-  reticulate::py_install("bioread", pip = TRUE)
-}
-bioread <- reticulate::import("bioread")
-
-acq      <- bioread$read_file(ACQ_FILE)
-raw_hz   <- as.integer(acq$samples_per_second)
-ch_names <- vapply(acq$channels, function(ch) ch$name, character(1))
-dur_sec  <- length(acq$channels[[1]]$data) / raw_hz
-
-# Locate channels by name (robust across recording layouts)
-breath_idx <- which(grepl("^Breath [12]$",        ch_names))
-hr_idx     <- which(grepl("^Human Heart Rate$",   ch_names, ignore.case = TRUE))
-trig_idx   <- which(grepl("Experiment Triggers",  ch_names, ignore.case = TRUE))[1]
-
-if (length(breath_idx) < 2 || length(hr_idx) < 2 || is.na(trig_idx))
-  stop("Unexpected channel layout. Channels found: ", paste(ch_names, collapse = ", "))
-
-# Determine seat from trigger_device in belt_sessions
-trigger_device <- belt_sessions$trigger_device[1]
-seat <- if (grepl("Left",  trigger_device, ignore.case = TRUE)) "L" else
-  if (grepl("Right", trigger_device, ignore.case = TRUE)) "R" else
-    stop("Unrecognised trigger_device: ", trigger_device)
-
-# Channel slot order (Breath 1/2, Heart 1/2) does not reliably map to Left/Right seat --
-# it reflects physical wiring which may vary across sessions. Instead, select the active
-# breath channel by variance: the participant present will have a high-variance signal;
-# the absent seat will be near-zero. Use trigger_device only to confirm expected seat.
-breath_stds <- sapply(breath_idx, function(i) sd(as.numeric(acq$channels[[i]]$data)))
-hr_stds     <- sapply(hr_idx,     function(i) sd(as.numeric(acq$channels[[i]]$data)))
-
-# Active = highest variance; inactive = lowest variance
-active_breath_slot <- which.max(breath_stds)
-active_hr_slot     <- which.max(hr_stds)
-
-message(sprintf("  Trigger device: %s -> seat %s", trigger_device, seat))
-message(sprintf("  Breath channel stds: %s -> selecting slot %d (R[[%d]])",
-                paste(round(breath_stds, 3), collapse = ", "),
-                active_breath_slot, breath_idx[active_breath_slot]))
-message(sprintf("  HR channel stds: %s -> selecting slot %d (R[[%d]])",
-                paste(round(hr_stds, 3), collapse = ", "),
-                active_hr_slot, hr_idx[active_hr_slot]))
-
-breath_raw <- as.numeric(acq$channels[[ breath_idx[active_breath_slot] ]]$data)
-hr_raw     <- as.numeric(acq$channels[[ hr_idx[active_hr_slot]         ]]$data)
-trig_raw   <- as.integer(round(as.numeric(acq$channels[[ trig_idx ]]$data)))
-
-message(sprintf("  Duration: %.1f min | Breath std: %.3f | HR mean: %.1f",
-                dur_sec / 60, sd(breath_raw), mean(hr_raw[hr_raw > 0])))
-
-# Clear value depends on trigger device
-# AD_BBT pulses to code then writes 0x00; Biopac idles at 240 (0xF0) between pulses
-trig_clear_val <- if (grepl("Biopac", trigger_device, ignore.case = TRUE)) 240L else 0L
-message(sprintf("  Trigger clear value: %d (device: %s)", trig_clear_val, trigger_device))
-
-# Extract trigger onsets
-events <- .trigger_onsets(trig_raw, raw_hz, clear_val = trig_clear_val)
-trial_start_events <- dplyr::filter(events, code == TRIG_TRIAL_START)
-
-message(sprintf("  Trigger events: %d total | val=250 (trial start): %d | val=252 (trial end): %d",
-                nrow(events),
-                nrow(trial_start_events),
-                sum(events$code == TRIG_TRIAL_END)))
-
-# The first val=250 is from the test cascade (t~61s); skip it
-cascade_cutoff_s <- 100
-trial_start_events <- dplyr::filter(trial_start_events, time_sec > cascade_cutoff_s)
-message(sprintf("  Real trial-start triggers (post-cascade): %d", nrow(trial_start_events)))
-
-if (nrow(trial_start_events) != nrow(belt_trials)) {
-  warning(sprintf("Trigger count (%d) != belt_trials rows (%d) -- check alignment",
-                  nrow(trial_start_events), nrow(belt_trials)))
-}
-
-# Downsample BioPac signals
-breath_ds <- .downsample(breath_raw, raw_hz / RESP_HZ)
-hr_ds     <- .downsample(hr_raw,     raw_hz / CARD_HZ)
-
-# ── Step 3: Alignment -- BioPac triggers <-> belt trial_onset_ms ──────────────
-message("Computing BioPac <-> belt alignment...")
-
-# Match by order. BioPac time is seconds from recording start; convert to ms.
-# belt_trials$trial_onset_ms is ms from session_start_epoch_ms.
-n_trials <- min(nrow(trial_start_events), nrow(belt_trials))
-
-alignment <- data.frame(
-  trial_idx       = seq_len(n_trials),
-  phase           = belt_trials$phase[seq_len(n_trials)],
-  trial_number    = belt_trials$trial_number[seq_len(n_trials)],
-  biopac_s        = trial_start_events$time_sec[seq_len(n_trials)],
-  biopac_sample   = trial_start_events$sample_idx[seq_len(n_trials)],
-  belt_onset_ms   = belt_trials$trial_onset_ms[seq_len(n_trials)],
-  belt_onset_epoch_ms = session_start_epoch_ms + belt_trials$trial_onset_ms[seq_len(n_trials)],
-  condition_onset_ms  = belt_trials$condition_onset_ms[seq_len(n_trials)],
-  trial_end_ms        = belt_trials$trial_end_ms[seq_len(n_trials)]
-) |>
-  dplyr::mutate(
-    biopac_ms      = biopac_s * 1000,
-    # offset: how many ms to add to BioPac ms to get belt epoch ms
-    offset_ms      = belt_onset_epoch_ms - biopac_ms
-  )
-
-# Fit linear drift: offset drifts across trials due to clock divergence
-drift_fit <- lm(offset_ms ~ trial_idx, data = alignment)
-alignment <- alignment |>
-  dplyr::mutate(
-    offset_corrected_ms = predict(drift_fit, newdata = alignment),
-    residual_ms         = offset_ms - offset_corrected_ms
-  )
-
-message(sprintf("  Clock drift: %.1f ms over %d trials (%.2f ms/trial)",
-                coef(drift_fit)[2] * (n_trials - 1), n_trials, coef(drift_fit)[2]))
-message(sprintf("  Residuals after linear correction: mean=%.1f ms, sd=%.1f ms, max=%.1f ms",
-                mean(alignment$residual_ms),
-                sd(alignment$residual_ms),
-                max(abs(alignment$residual_ms))))
-
-# ── Step 4: Load and reconstruct belt accel timestamps ────────────────────────
-message("Loading belt accel CSV...")
-
-accel_raw <- readr::read_csv(ACCEL_FILE, show_col_types = FALSE) |>
-  dplyr::mutate(
-    x = as.numeric(x),
-    y = as.numeric(y),
-    z = as.numeric(z),
-    sample_index = as.integer(sample_index),
-    packet_timestamp = as.numeric(packet_timestamp)
-  )
-
-message(sprintf("  Rows: %d | Phases: %s",
-                nrow(accel_raw),
-                paste(sort(unique(accel_raw$phase)), collapse = ", ")))
-
-# Reconstruct per-sample timestamps (packet_timestamp = last sample in packet)
-accel_raw <- .reconstruct_timestamps(accel_raw)
-
-# ── Step 5: Interpolate belt accel to uniform 25 Hz grid ─────────────────────
-message("Interpolating belt accel to uniform 25 Hz grid...")
-
-# Uniform grid in epoch ms covering full session
-grid_interval_ms <- 1000 / RESP_HZ   # 40 ms
-t_start <- min(accel_raw$sample_ms)
-t_end   <- max(accel_raw$sample_ms)
-time_grid_ms <- seq(t_start, t_end, by = grid_interval_ms)
-
-# Interpolate each axis + magnitude onto uniform grid
-# Use zoo::na.approx via approx for cleanliness
-.interp_to_grid <- function(t_orig, y_orig, t_grid) {
-  approx(t_orig, y_orig, xout = t_grid, method = "linear", rule = 2)$y
-}
-
-accel_grid <- data.frame(
-  epoch_ms  = time_grid_ms,
-  x         = .interp_to_grid(accel_raw$sample_ms, accel_raw$x, time_grid_ms),
-  y         = .interp_to_grid(accel_raw$sample_ms, accel_raw$y, time_grid_ms),
-  z         = .interp_to_grid(accel_raw$sample_ms, accel_raw$z, time_grid_ms)
-)
-
-# ── Step 6: Bandpass filter axes for MLR fitting (wide: 0.05-1.0 Hz) ─────────
-message("Applying wide bandpass filter to belt accel (0.05-1.0 Hz)...")
-
-accel_grid <- accel_grid |>
-  dplyr::mutate(
-    x_bp = .butter_filter(x, WIDE_BP_LOW, WIDE_BP_HIGH, RESP_HZ),
-    y_bp = .butter_filter(y, WIDE_BP_LOW, WIDE_BP_HIGH, RESP_HZ),
-    z_bp = .butter_filter(z, WIDE_BP_LOW, WIDE_BP_HIGH, RESP_HZ)
-  )
-
-
-# ── Step 7: Fit MLR weights on baseline period ────────────────────────────────
-message("Fitting MLR weights on baseline period...")
-
-# Interpolate BioPac breath signal to 25 Hz epoch ms grid
-biopac_time_ms <- seq(0, length(breath_raw) - 1) / raw_hz * 1000
-# Convert to epoch ms using linear drift-corrected offset at trial 1
-# For the baseline (pre-trial), use offset at trial_idx=0 (extrapolate fit)
-offset_at_baseline <- predict(drift_fit, newdata = data.frame(trial_idx = 0))
-biopac_epoch_ms <- biopac_time_ms + offset_at_baseline
-
-# Downsample BioPac to 25 Hz for regression
-breath_ds_full <- .downsample(breath_raw, raw_hz / RESP_HZ)
-biopac_epoch_ms_ds <- biopac_epoch_ms[seq(1, length(biopac_epoch_ms), by = raw_hz / RESP_HZ)]
-
-# Interpolate BioPac breath onto the accel grid
-biopac_on_grid <- approx(biopac_epoch_ms_ds, breath_ds_full,
-                         xout = accel_grid$epoch_ms,
-                         method = "linear", rule = 2)$y
-accel_grid$biopac_breath <- biopac_on_grid
-
-# Identify baseline samples on the accel grid
-# Baseline phase in accel_raw covers phase == "baseline"
-baseline_epoch_range <- accel_raw |>
-  dplyr::filter(phase == "baseline") |>
-  dplyr::summarise(t_min = min(sample_ms), t_max = max(sample_ms))
-
-baseline_mask <- accel_grid$epoch_ms >= baseline_epoch_range$t_min &
-  accel_grid$epoch_ms <= baseline_epoch_range$t_max
-
-message(sprintf("  Baseline samples for MLR fit: %d (%.1f s)",
-                sum(baseline_mask), sum(baseline_mask) / RESP_HZ))
-
-# Fit MLR: BioPac breath ~ x_bp + y_bp + z_bp (no intercept forced, let lm add it)
-mlr_data <- accel_grid[baseline_mask, ]
-mlr_fit  <- lm(biopac_breath ~ x_bp + y_bp + z_bp, data = mlr_data)
-mlr_r    <- cor(mlr_data$biopac_breath, fitted(mlr_fit))
-
-message(sprintf("  MLR calibration R = %.3f (cf. stored calib_fit_r = 0.518)", mlr_r))
-
-# Apply MLR weights to full grid
-accel_grid$mlr_pred <- predict(mlr_fit, newdata = accel_grid)
-
-# Apply 0.6 Hz LP post-smooth (the -lp suffix in mlr-wide-lp)
-accel_grid$mlr_lp <- .butter_lp(accel_grid$mlr_pred, LP_CUTOFF, RESP_HZ)
-
-
-# ── Step 8: Per-trial epoch extraction ───────────────────────────────────────
-message("Extracting per-trial epochs...")
-
-trial_epochs <- vector("list", n_trials)
-
-for (i in seq_len(n_trials)) {
-  al <- alignment[i, ]
-  
-  # Anchor: BioPac trigger sample for this trial
-  # trial_onset = BioPac trigger; condition_onset and trial_end from belt (ms from session_start)
-  # Convert belt ms offsets to BioPac sample index using linear drift correction
-  biopac_onset_sample  <- al$biopac_sample
-  biopac_onset_ms      <- al$biopac_ms
-  
-  # Condition onset and trial end in BioPac ms (belt ms relative to session start)
-  # Use per-trial drift-corrected offset to convert belt epoch ms -> BioPac ms
-  belt_to_biopac_ms <- function(belt_ms_rel) {
-    # belt_ms_rel is ms from session_start; convert to absolute epoch, then to BioPac ms
-    epoch_ms <- session_start_epoch_ms + belt_ms_rel
-    biopac_ms <- epoch_ms - al$offset_corrected_ms
-    biopac_ms
+  # -- 1. Session and trial records -------------------------------------------
+  idcol <- if ("participant_external_id" %in% names(belt_sessions))
+    "participant_external_id" else "participant_id"
+  sess <- belt_sessions[as.character(belt_sessions[[idcol]]) == pid, , drop = FALSE]
+  if (nrow(sess) != 1L) {
+    stop("Participant ", pid, ": expected exactly one session row, found ", nrow(sess))
   }
-  
-  condition_onset_biopac_ms <- belt_to_biopac_ms(al$condition_onset_ms)
-  trial_end_biopac_ms       <- belt_to_biopac_ms(al$trial_end_ms)
-  
-  # BioPac samples (2000 Hz) for full trial window
-  onset_samp <- biopac_onset_sample
-  end_samp   <- min(round(trial_end_biopac_ms / 1000 * raw_hz), length(breath_raw))
-  
-  # Downsample indices for 25 Hz breath and 250 Hz HR
-  resp_onset  <- round(al$biopac_s * RESP_HZ) + 1L
-  resp_end    <- min(round(trial_end_biopac_ms / 1000 * RESP_HZ) + 1L, length(breath_ds))
-  card_onset  <- round(al$biopac_s * CARD_HZ) + 1L
-  card_end    <- min(round(trial_end_biopac_ms / 1000 * CARD_HZ) + 1L, length(hr_ds))
-  
-  # Belt accel epochs (epoch ms window)
-  belt_onset_epoch  <- al$belt_onset_epoch_ms
-  belt_end_epoch    <- session_start_epoch_ms + al$trial_end_ms
-  belt_mask         <- accel_grid$epoch_ms >= belt_onset_epoch &
-    accel_grid$epoch_ms <= belt_end_epoch
-  
-  # Timing of condition onset relative to trial onset (ms)
-  condition_offset_ms <- al$condition_onset_ms - al$belt_onset_ms
-  
-  trial_epochs[[i]] <- list(
-    participant_id        = PID,
-    trial_idx             = i,
-    phase                 = al$phase,
-    trial_number          = al$trial_number,
-    condition             = belt_trials$condition[i],
-    log10_mag             = belt_trials$log10_mag[i],
-    response              = belt_trials$response[i],
-    correct               = belt_trials$correct[i],
-    confidence            = belt_trials$confidence[i],
-    arousal               = belt_trials$arousal[i],
-    condition_offset_ms   = condition_offset_ms,
-    
-    # Timing anchors
-    biopac_onset_sample   = onset_samp,
-    biopac_onset_s        = al$biopac_s,
-    alignment_residual_ms = al$residual_ms,
-    
-    # BioPac breath segment (25 Hz), time-locked to trial start
-    biopac_breath_25hz    = if (resp_onset <= resp_end && resp_end <= length(breath_ds))
-      breath_ds[resp_onset:resp_end] else numeric(0),
-    
-    # BioPac HR segment (250 Hz)
-    biopac_hr_250hz       = if (card_onset <= card_end && card_end <= length(hr_ds))
-      hr_ds[card_onset:card_end] else numeric(0),
-    
-    # Belt accel segment (25 Hz interpolated grid)
-    belt_mlr_lp_25hz      = accel_grid$mlr_lp[belt_mask],
-    belt_epoch_ms         = accel_grid$epoch_ms[belt_mask],
-    
-    # Per-sample time axis relative to trial onset (ms), for belt signal
-    belt_t_ms             = accel_grid$epoch_ms[belt_mask] - belt_onset_epoch,
-    
-    r_mlr_vs_biopac = {
-      bp_interp <- approx(
-        seq_along(breath_ds) / RESP_HZ * 1000,
-        breath_ds,
-        xout = accel_grid$epoch_ms[belt_mask] - (session_start_epoch_ms + al$belt_onset_ms - al$biopac_ms * 1),
-        method = "linear", rule = 2
-      )$y
-      if (length(bp_interp) > 2 && sd(bp_interp) > 0 && sd(accel_grid$mlr_lp[belt_mask]) > 0)
-        cor(accel_grid$mlr_lp[belt_mask], bp_interp)
-      else NA_real_
-    }
+  tri <- belt_trials[as.character(belt_trials[[idcol]]) == pid, , drop = FALSE]
+  tri <- tri[order(tri$trial_onset_ms), , drop = FALSE]
+  if (!nrow(tri)) stop("Participant ", pid, ": no trial records.")
+  session_start_epoch_ms <- as.numeric(sess$session_start_epoch_ms[1])
+
+  # -- 2. Seat and rig, resolved independently --------------------------------
+  acq_path <- resolve_participant(pid, seat_map)$acq_file
+  acq      <- read_acq(acq_path)
+  trig_raw <- acq$get(TRIGGER_CHANNEL)
+
+  rig_obs <- rig_from_trigger_codes(trig_raw)
+  rec <- reconcile_session(pid, seat_map,
+                           trigger_device = as.character(sess$trigger_device[1]),
+                           observed_codes = NULL)
+  rig  <- if (!is.na(rig_obs)) rig_obs else rec$rig
+  seat <- rec$seat
+  if (is.na(rig)) stop("Participant ", pid, ": could not identify the trigger rig.")
+  if (!is.na(rig_obs) && !identical(rig_obs, as.character(sess$trigger_device[1]))) {
+    add_flag(sprintf("trigger_device=%s but recorded codes say %s",
+                     sess$trigger_device[1], rig_obs))
+  }
+  if (!identical(unname(c(Biopac_Left = "LEFT", Biopac_Right = "RIGHT")[rig]), seat)) {
+    # Not an error. 14425 genuinely sat in the left seat while the right computer
+    # ran the session. The seat picks the respiration channel, the rig picks the
+    # code encoding, and they are allowed to differ.
+    add_flag(sprintf("seat=%s but rig=%s (participant sat in one seat, other computer ran the session)",
+                     seat, rig))
+  }
+  chans <- SEAT_CHANNELS[[seat]]
+  .msg("seat=%s rig=%s -> %s / %s", seat, rig, chans[["breath"]], chans[["heart"]])
+
+  breath_raw <- acq$get(chans[["breath"]])
+  hr_raw     <- acq$get(chans[["heart"]])
+  raw_hz     <- acq$hz
+
+  # Guard against reading a vacant seat. An occupied channel exceeds a vacant one
+  # by about three orders of magnitude, so this is unambiguous.
+  if (stats::sd(breath_raw) < 0.01) {
+    stop("Participant ", pid, ": respiration channel ", chans[["breath"]],
+         " has SD ", signif(stats::sd(breath_raw), 3),
+         ", which is a vacant seat. Seat resolution is wrong.")
+  }
+
+  # -- 3. Triggers ------------------------------------------------------------
+  events <- decode_triggers(trig_raw, raw_hz, rig)
+  events <- drop_pre_session(events, CODE_SESSION_START)   # removes the setup cascade
+  starts <- events[events$code == CODE_TRIAL_START, , drop = FALSE]
+  ends   <- events[events$code == CODE_TRIAL_END,   , drop = FALSE]
+  .msg("events after cascade: %d | trial starts: %d | trial ends: %d",
+       nrow(events), nrow(starts), nrow(ends))
+
+  if (nrow(starts) != nrow(tri)) {
+    stop("Participant ", pid, ": ", nrow(starts), " trial-start triggers but ",
+         nrow(tri), " trial records. Alignment would be silently wrong.")
+  }
+  if (nrow(starts) != nrow(ends)) {
+    add_flag(sprintf("%d trial starts vs %d trial ends", nrow(starts), nrow(ends)))
+  }
+  # Block codes may repeat: 3997 emitted code 7 twice. Report, do not fail.
+  dup_block <- setdiff(events$code[duplicated(events$code)], c(CODE_TRIAL_START, CODE_TRIAL_END))
+  if (length(dup_block)) add_flag(paste("repeated block code(s):", paste(sort(unique(dup_block)), collapse = ",")))
+
+  # -- 4. Decimate ------------------------------------------------------------
+  breath_ds <- decimate_safe(breath_raw, decimation_factor(raw_hz, RESP_HZ))
+  hr_ds     <- decimate_safe(hr_raw,     decimation_factor(raw_hz, CARD_HZ))
+
+  # -- 5. Accelerometer -------------------------------------------------------
+  accel_file <- list.files(paths$bt_dir,
+                           pattern = paste0("^", pid, "_session\\d+_accel\\.csv$"),
+                           full.names = TRUE)
+  if (length(accel_file) != 1L) {
+    stop("Participant ", pid, ": expected one accel CSV, found ", length(accel_file))
+  }
+  accel <- readr::read_csv(accel_file, show_col_types = FALSE)
+  accel <- reconstruct_accel_times(accel)
+
+  grid_ms <- seq(min(accel$sample_ms), max(accel$sample_ms), by = 1000 / RESP_HZ)
+  grid <- data.frame(
+    epoch_ms = grid_ms,
+    x = interp_to_grid(accel$sample_ms, accel$x, grid_ms),
+    y = interp_to_grid(accel$sample_ms, accel$y, grid_ms),
+    z = interp_to_grid(accel$sample_ms, accel$z, grid_ms)
   )
+
+  # -- 6. Alignment -----------------------------------------------------------
+  align <- data.frame(
+    trial_idx     = seq_len(nrow(tri)),
+    phase         = tri$phase,
+    trial_number  = tri$trial_number,
+    biopac_s      = starts$time_sec,
+    biopac_sample = starts$sample_idx,
+    belt_onset_ms = tri$trial_onset_ms,
+    condition_onset_ms = tri$condition_onset_ms,
+    trial_end_ms  = tri$trial_end_ms
+  )
+  align$belt_onset_epoch_ms <- session_start_epoch_ms + align$belt_onset_ms
+  align$biopac_ms <- align$biopac_s * 1000
+  align$offset_ms <- align$belt_onset_epoch_ms - align$biopac_ms
+
+  drift <- stats::lm(offset_ms ~ trial_idx, data = align)
+  align$offset_corrected_ms <- stats::predict(drift, newdata = align)
+  align$residual_ms <- align$offset_ms - align$offset_corrected_ms
+  resid_sd <- stats::sd(align$residual_ms)
+  .msg("drift %.0f ms over %d trials | residual SD %.1f ms",
+       stats::coef(drift)[2] * (nrow(align) - 1), nrow(align), resid_sd)
+
+  # BioPac onto the accelerometer grid, using the drift fit extrapolated to the
+  # pre-trial period so calibration and Block 2 are covered.
+  offset0 <- stats::predict(drift, newdata = data.frame(trial_idx = 0))
+  biopac_epoch_ms_ds <- seq(0, length(breath_ds) - 1) / RESP_HZ * 1000 + offset0
+  grid$biopac_breath <- interp_to_grid(biopac_epoch_ms_ds, breath_ds, grid$epoch_ms)
+
+  # -- 7. Calibration against the reconstructed pacer -------------------------
+  #
+  # The pacer overshoots its nominal period (see R/pacer.R). The overshoot is
+  # measured from this participant's own recorded trial durations, which is
+  # timing metadata, not an outcome, and applied to the calibration pacer too.
+  over    <- estimate_pacer_overshoot(tri)
+  eff_per <- CALIB_PERIOD_MS + over$delta_ms
+  .msg("pacer overshoot %.0f ms/breath (SD %.0f, n=%d) -> effective period %.0f ms",
+       over$delta_ms, over$delta_sd, over$n_trials, eff_per)
+  if (over$delta_ms > 600 || over$delta_ms < -50) {
+    add_flag(sprintf("implausible pacer overshoot %.0f ms/breath", over$delta_ms))
+  }
+
+  chk    <- check_calib_window(accel$phase, accel$sample_ms, pid, period_ms = eff_per)
+  anchor <- calib_anchor_ms(accel$phase, accel$sample_ms)
+  win    <- calib_fit_window(anchor, period_ms = eff_per)
+  .msg("calib_breathe spans %.0f ms; fitting %.0f ms (%.0f ms is model fitting, discarded)",
+       chk$span_ms, chk$paced_ms, chk$overrun_ms)
+
+  cal_mask <- grid$epoch_ms >= win[["start_ms"]] & grid$epoch_ms <= win[["end_ms"]]
+  fit <- fit_calibration(grid[cal_mask, c("epoch_ms", "x", "y", "z")] |>
+                           stats::setNames(c("t_ms", "x", "y", "z")),
+                         anchor_ms = anchor, period_ms = eff_per,
+                         hz = RESP_HZ, target = "pacer", pid = pid)
+  if (!is.na(fit$calib_flag)) add_flag(fit$calib_flag)
+  if (fit$calib_lag_ms < 0 || fit$calib_lag_ms > 1000) {
+    add_flag(sprintf("device lag %.0f ms outside the expected 0 to 1000 ms range",
+                     fit$calib_lag_ms))
+  }
+  .msg("model=%s r=%.3f (lag-corrected %.3f) lag=%.0f ms margin=%.3f",
+       fit$calib_model_label, fit$mlr_r_calib, fit$mlr_r_calib_lagcorr,
+       fit$calib_lag_ms, fit$model_margin)
+
+  applied <- apply_calibration(grid$x, grid$y, grid$z, fit, RESP_HZ)
+  grid$x_bp <- applied$x_bp; grid$y_bp <- applied$y_bp; grid$z_bp <- applied$z_bp
+  grid$mlr_pred <- applied$pred
+  grid$mlr_lp   <- if (isTRUE(fit$smooth)) applied$pred else lp_filter(applied$pred, hz = RESP_HZ)
+
+  # -- 8. Sensitivity fit (OFF by default; see the disclosure block) ----------
+  fit_biopac <- NULL
+  if (isTRUE(sensitivity)) {
+    warning("Participant ", pid, ": the BioPac-target sensitivity fit computes a ",
+            "between-device correlation. This must not run while the internal ",
+            "pilot protection is live.", call. = FALSE)
+    b2 <- accel$sample_ms[accel$phase == "baseline"]
+    m  <- grid$epoch_ms >= min(b2) & grid$epoch_ms <= max(b2)
+    fit_biopac <- fit_calibration(
+      grid[m, c("epoch_ms", "x", "y", "z")] |> stats::setNames(c("t_ms", "x", "y", "z")),
+      anchor_ms = anchor, period_ms = CALIB_PERIOD_MS, hz = RESP_HZ,
+      target = "biopac", biopac = grid$biopac_breath[m], pid = pid)
+  }
+
+  # -- 9. Assemble ------------------------------------------------------------
+  #
+  # NO agreement quantity appears below. No per-trial belt-versus-BioPac
+  # correlation, no r_summary. See the disclosure block at the top.
+  out <- list(
+    participant_id         = pid,
+    session_start_epoch_ms = session_start_epoch_ms,
+    biopac = list(
+      breath_25hz = breath_ds, hr_250hz = hr_ds,
+      events = events, trial_starts = starts,
+      hz_breath = RESP_HZ, hz_hr = CARD_HZ, raw_hz = raw_hz,
+      acq_file = basename(acq_path), seat = seat, rig = rig,
+      breath_channel = chans[["breath"]], heart_channel = chans[["heart"]]
+    ),
+    belt = list(
+      accel_grid = grid,
+      hz         = RESP_HZ,
+      # Fields the extraction script requires. It hard-fails without them.
+      calib_target      = fit$calib_target,
+      calib_model_label = fit$calib_model_label,
+      calib_lag_ms      = fit$calib_lag_ms,
+      mlr_r_calib       = fit$mlr_r_calib,
+      # Additions, see docs/discrepancies.md C5 and C6.
+      mlr_r_calib_lagcorr = fit$mlr_r_calib_lagcorr,
+      model_margin        = fit$model_margin,
+      calib_flag          = fit$calib_flag,
+      all_model_r         = fit$all_model_r,
+      bias = fit$bias, weights = fit$weights,
+      band = fit$band, smooth = fit$smooth,
+      calib_anchor_ms = anchor, calib_window_ms = win,
+      pacer_overshoot_ms = over$delta_ms, pacer_overshoot_sd = over$delta_sd,
+      calib_period_effective_ms = eff_per,
+      calib_overrun_ms = chk$overrun_ms,
+      sensitivity_biopac = fit_biopac
+    ),
+    alignment = list(
+      trial_table    = align,
+      drift_fit      = drift,
+      drift_ms_total = unname(stats::coef(drift)[2] * (nrow(align) - 1)),
+      residual_sd_ms = resid_sd          # required by the extraction script
+    ),
+    flags = flags,
+    provenance = list(
+      prepped_at = as.character(Sys.time()),
+      radlab_commit = "98b2dca",
+      accel_ms_per_sample = ACCEL_MS_PER_SAMPLE,
+      filter_order = CALIB_ORDER, pad_sec = CALIB_PAD_SEC
+    )
+  )
+
+  if (length(flags)) for (f in flags) .msg("FLAG: %s", f)
+  if (write) {
+    dir.create(paths$output_dir, recursive = TRUE, showWarnings = FALSE)
+    f <- file.path(paths$output_dir, paste0(pid, "_physio.rds"))
+    saveRDS(out, f); .msg("wrote %s", basename(f))
+  }
+  invisible(out)
 }
-
-message(sprintf("  Extracted %d trial epochs", length(trial_epochs)))
-
-# ── Step 9: Summary correlation comparison ────────────────────────────────────
-message("Signal convergence summary (mlr-wide-lp vs. BioPac):")
-
-r_summary <- data.frame(
-  trial_idx = sapply(trial_epochs, `[[`, "trial_idx"),
-  phase     = sapply(trial_epochs, `[[`, "phase"),
-  r_mlr_lp  = sapply(trial_epochs, `[[`, "r_mlr_vs_biopac")
-)
-
-message(sprintf("  mean r=%.3f  sd=%.3f  median=%.3f",
-                mean(r_summary$r_mlr_lp,   na.rm = TRUE),
-                sd(r_summary$r_mlr_lp,     na.rm = TRUE),
-                median(r_summary$r_mlr_lp, na.rm = TRUE)))
-
-# ── Step 10: Save RDS ─────────────────────────────────────────────────────────
-message("Saving RDS...")
-
-out <- list(
-  participant_id   = PID,
-  session_start_epoch_ms = session_start_epoch_ms,
-  
-  # BioPac full-session signals
-  biopac = list(
-    breath_25hz   = breath_ds,
-    hr_250hz      = hr_ds,
-    events        = events,
-    trial_starts  = trial_start_events,
-    hz_breath     = RESP_HZ,
-    hz_hr         = CARD_HZ,
-    raw_hz        = raw_hz,
-    duration_sec  = dur_sec,
-    acq_file      = basename(ACQ_FILE),
-    seat          = seat,
-    breath_ch     = breath_idx[active_breath_slot] - 1L,  # 0-based Python index
-    hr_ch         = hr_idx[active_hr_slot]         - 1L   # 0-based Python index
-  ),
-  
-  # Belt accel full-session (uniform 25 Hz grid)
-  belt = list(
-    accel_grid    = accel_grid,   # epoch_ms, x/y/z, x_bp/y_bp/z_bp, biopac_breath, mlr_pred, mlr_lp
-    hz            = RESP_HZ,
-    mlr_fit       = mlr_fit,
-    mlr_r_calib   = mlr_r,
-    wide_bp_low   = WIDE_BP_LOW,
-    wide_bp_high  = WIDE_BP_HIGH,
-    lp_cutoff     = LP_CUTOFF
-  ),
-  
-  # Alignment diagnostics
-  alignment = list(
-    trial_table   = alignment,
-    drift_fit     = drift_fit,
-    drift_ms_total = coef(drift_fit)[2] * (n_trials - 1),
-    residual_sd_ms = sd(alignment$residual_ms)
-  ),
-  
-  # Per-trial epochs
-  trial_epochs = trial_epochs,
-  
-  # Convergence summary
-  r_summary = r_summary
-)
-
-saveRDS(out, OUTPUT_FILE)
-message(sprintf("Saved: %s", OUTPUT_FILE))
-message("Done.")

@@ -280,13 +280,28 @@ decode_triggers <- function(trig, hz, rig) {
 }
 
 
-# Drop everything before the session-start code (1), which removes the setup
-# verification cascade. This replaces the fragile 100 s cutoff in the old script.
+# Drop everything up to and including the setup verification cascade.
+#
+# SUBTLE: take the LAST session-start code, not the first.
+#
+# `sendTestCascade` fires ALL THIRTEEN codes before the session begins, so the
+# cascade contains its own code 1. Anchoring on the first code 1 therefore keeps
+# the entire cascade, including its code 10, which shows up as one extra
+# trial-start trigger. That is exactly the off-by-one that appeared on 14542:
+# 35 trial starts against 34 trial records.
+#
+# The cascade always precedes the real session, so the last code 1 is the real
+# session start. A session with no cascade has a single code 1 and is unaffected.
 drop_pre_session <- function(events, session_start_code = 1L) {
-  first <- which(events$code == session_start_code)
-  if (!length(first)) {
+  hits <- which(events$code == session_start_code)
+  if (!length(hits)) {
     stop("No session-start code (", session_start_code, ") found. Cannot ",
          "distinguish the setup verification cascade from real trials.")
   }
-  events[seq(first[1], nrow(events)), , drop = FALSE]
+  if (length(hits) > 2L) {
+    warning("Found ", length(hits), " session-start codes; expected 1 (no ",
+            "cascade) or 2 (cascade plus session). Using the last. The session ",
+            "may have been restarted.", call. = FALSE)
+  }
+  events[seq(hits[length(hits)], nrow(events)), , drop = FALSE]
 }

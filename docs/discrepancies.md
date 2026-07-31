@@ -48,6 +48,12 @@ The pre-registration is correct. Condition onset is computed, not measured.
 
 ### B1. The calibration fit window is 3.1 s longer than the calibration
 
+> **PARTLY WRONG. Superseded by B11.** The overrun is real, but only about 2.1 s
+> of it is model-fitting time. The other 1.2 s is the pacer itself running long.
+> The fix below (trim to a nominal 16,000 ms) therefore discards real paced data
+> AND assumes a period the pacer does not use. See B11.
+
+
 `CALIB_CYCLES = 3` is exported from `constants.js` but **never read anywhere**.
 The actual pacing loop in `CalibrationScreen.jsx` is a hard-coded
 `for (let i = 0; i < 4; i++)`, so calibration is genuinely 4 cycles at 4000 ms,
@@ -378,6 +384,74 @@ answer is not equivalent to one that yields the right answer.
 preregister it as part of the decision rather than as a footnote. Note also that
 `na.rm = TRUE` lets a pair mean be computed from a single detected breath, so
 partial detection degrades quietly rather than becoming NA.
+
+### B11. The pacer does not run at its nominal period
+
+**This is the largest finding so far and it reaches H3, H4 and EH2.**
+
+Both `CalibrationScreen` and `useTrialRunner` drive the pacer as
+`for (i...) await startBreath(periodMs)`, and `useBreathCycle.startBreath`
+re-anchors the cycle clock on every call:
+
+```js
+cycleStartRef.current = performance.now()
+return new Promise(r => setTimeout(r, durationMs))
+```
+
+`setTimeout` fires no earlier than `durationMs` and usually later. Because each
+cycle restarts its clock when the previous promise resolves, **the overshoot
+accumulates rather than averaging out**. The pacer is a sequence of independently
+anchored cycles, not the single continuous sinusoid that `getPacerRadius`
+assumes. The software's own `fitBestModel` makes the same assumption, so live
+`calib_fit_r` values are degraded too.
+
+**Measured from recorded trial durations** (timing metadata only, no outcome).
+For a 4-breath trial, `trial_end - trial_onset = nominal + 4 * delta`. For 14542:
+
+| condition | mean duration | nominal | excess |
+|---|---|---|---|
+| faster | 15,403 ms | 14,282 | +1,121 |
+| same | 17,057 ms | 16,000 | +1,057 |
+| slower | 18,877 ms | 17,756 | +1,121 |
+
+**delta = 293 ms per breath, SD 27 across 34 trials.** Consistent across
+conditions, and tight.
+
+Everything reconciles on that number:
+
+```
+calibration pacing  = 4 x (4000 + 293)          = 17,172 ms
+model fitting       =                             ~2,101 ms
+                                                  ---------
+observed calib_breathe span                       19,273 ms
+```
+
+**Consequences for the pre-registration:**
+
+- **Condition onset is not trial start + 8000 ms.** It is
+  `2 x (4000 + delta)` = about **8,586 ms**. The software records
+  `condition_onset_ms` as exactly 8000 for every trial, so the recorded value is
+  systematically about 586 ms early. Section 1.6 and Limitation 4 both state the
+  8000 ms figure and need correcting.
+- **"Commanded period" is not the displayed period.** Section 4.3 defines it as
+  4000/3000/5000 ms. The pacer actually displays about 4293/3293/5293. H4 tests
+  measured duration against the commanded period, so its ground truth is off by
+  roughly 7%, and H3's imposed-rate predictor is likewise nominal rather than
+  realised.
+- Because delta is common to both devices it largely **cancels in the
+  between-device contrasts**, which is what H1, H4 test 2 and H7 rest on. The
+  per-device figures in H4 test 1, already labelled descriptive, are the ones
+  most affected.
+
+**What is NOT yet resolved.** Reconstructing the pacer needs two parameters that
+were never recorded: the phase anchor (`calibStartMs` is not persisted) and the
+effective period. They are confounded with each other and with device lag inside
+the calibration block. On 14542, scanning both jointly lifts the calibration fit
+from r = 0.42 to about 0.61 and moves the estimated lag from an implausible
+-240 ms to plus or minus 80 ms, but the surface is flat between effective periods
+of 4275 and 4850, so neither parameter is sharply identified from one
+participant. **Not tuned on pilot data pending Norm's decision.** Options are set
+out in the session notes.
 
 ### C5. Calibration fit and device lag are not independent
 
