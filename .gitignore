@@ -1,0 +1,31 @@
+# ── Participant data: never tracked ───────────────────────────────────────────
+# Raw signal, tabular exports, and derived per-participant files stay on the
+# shared drive only. Nothing identifiable or outcome-bearing goes to GitHub,
+# private repo or not.
+Data/
+Analysis/output/
+Analysis/pilot_variance/
+Pilot/
+archive/Pilot/
+
+# ── R ─────────────────────────────────────────────────────────────────────────
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rcheck/
+.httr-oauth
+
+# ── Google Drive / Windows / Office cruft ─────────────────────────────────────
+desktop.ini
+Thumbs.db
+ehthumbs.db
+~$*
+*.tmp
+.DS_Store
+
+# ── Google Docs pointers (not real content) ───────────────────────────────────
+*.gdoc
+*.gsheet
+*.gslides
