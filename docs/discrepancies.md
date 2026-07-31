@@ -70,6 +70,11 @@ remainder. Verify per participant that the block is at least that long.
 
 ### B2. Trigger encoding differs between the two rigs
 
+> **Superseded by B10.** The conclusion holds, the mechanism stated below does
+> not. The rigs use different physical WIRES, not a numeric multiplier, and an
+> idle nibble floats high so codes never appear as bare 10 or 160. Decode by
+> nibble mask. Kept for the reasoning trail.
+
 `constants.js` defines the rigs with different parallel-port encodings:
 
 ```js
@@ -102,11 +107,11 @@ rig rather than assumed.
 while the software was left on its `Biopac_Right` default. If so the trigger went
 to port `0xD030` unshifted while respiration was recorded on the left channel.
 
-**Resolved in principle, Norm 2026-07-31.** No run sheet is available, but the
-trigger codes are authoritative and the two rigs use completely orthogonal code
-sets: right emits 1 to 13, left emits multiples of 16 (16 to 208). The sets do
-not overlap, which is what lets two simultaneously running participants share a
-recording and still be separated.
+**Resolved, Norm 2026-07-31.** No run sheet is available, but the trigger codes
+are authoritative and the two rigs are completely orthogonal. B10 establishes the
+mechanism: they write to different physical wires, right on the low nibble and
+left on the high nibble, which is what lets two simultaneously running
+participants share a recording and still be separated.
 
 **Action.** In Task 3, decode each session's trigger channel and derive the rig
 from the observed code set rather than trusting `trigger_device`. Reconcile
