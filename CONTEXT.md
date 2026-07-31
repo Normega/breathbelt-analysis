@@ -24,15 +24,19 @@ Five blocks in one session, roughly 40 to 60 minutes.
 
 | Block | Accel phase label | Duration | Notes |
 |---|---|---|---|
-| Fixation | `calib_fixation` | 800 ms | `FIXATION_DELAY_MS` |
-| Calibration | `calib_breathe` | 16,000 ms paced, plus ~3.1 s of model fitting | 4 cycles at 4000 ms, hard-coded loop |
-| Free breathing, pre | `baseline` | 120,000 ms | no pacer |
-| Phase 2, fixed rates | `phase2` | 9 trials | 3 conditions x 3 reps, 3000/4000/5000 ms |
-| Phase 3, staircase | `phase3` | 20 to 60 trials | dual QUEST, participant-initiated |
-| Free breathing, post | `post_baseline` | 120,000 ms | no pacer |
+| Block 1, fixation | `calib_fixation` | 800 ms | `FIXATION_DELAY_MS` |
+| Block 1, calibration | `calib_breathe` | 16,000 ms paced, plus ~3.1 s of model fitting | 4 cycles at 4000 ms, hard-coded loop |
+| Block 2, free breathing 1 | `baseline` | 120,000 ms | no pacer |
+| Block 3, fixed rates | `phase2` | 9 trials | 3 conditions x 3 reps, 3000/4000/5000 ms |
+| Block 4, staircase | `phase3` | 20 to 60 trials | dual QUEST, participant-initiated |
+| Block 5, free breathing 2 | `post_baseline` | 120,000 ms | no pacer |
 
-`inter_trial` and `idle` also appear as phase labels. Every trial in Phases 2 and
-3 is 4 breaths: 2 at the 4000 ms baseline, then 2 at the condition period.
+**Blocks 3 and 4 are off by one from their data labels** `phase2` and `phase3`,
+and from `belt_trials.phase` values 2 and 3. This is permanent; do not "fix" it.
+
+`inter_trial` and `idle` also appear as phase labels and belong to no block.
+Every trial in Blocks 3 and 4 is 4 breaths: 2 at the 4000 ms baseline, then 2 at
+the condition period.
 
 The `calib_breathe` label overruns the actual pacing by about 3.1 s because
 `fitBestModel()` runs inside it. Trim to `4 x period` from the first sample.
@@ -54,14 +58,40 @@ The `calib_breathe` label overruns the actual pacing by about 3.1 s because
 
 ## BioPac
 
-- 2000 Hz raw, decimated to 25 Hz for analysis
+- **BN-RSPEC BioNomadix Respiration and ECG wireless system**, not an RSP100C.
+  There is no operator-configurable gain or filter stage; bandwidth is fixed in
+  hardware. **[NEEDS INPUT]** the datasheet bandwidth
+- 2000 Hz raw, decimated to 25 Hz for analysis. Decimate with an anti-alias
+  filter (`signal::decimate`), not by stride: the fixed hardware bandwidth is the
+  only protection ahead of it and its value is not yet documented
+- AcqKnowledge template defines **17 channels**, all at 2000 Hz:
+
+  | # | Channel | Notes |
+  |---|---|---|
+  | 0, 1 | `Breath 1`, `Breath 2` | Volts, one per seat |
+  | 2, 3 | `Heart 1`, `Heart 2` | mV, one per seat |
+  | 4 to 11 | `Digital (STP Input 0..7)` | 0 or 5 V, the eight trigger lines |
+  | 12 | `Experiment Triggers` | derived sum of the eight digital lines |
+  | 13, 14 | `Human Heart Rate` | BPM, calculation channels |
+  | 15, 16 | `Respiration Rate` | BPM, calculation channels |
+
+  The template governs display and derived channels only. Respiration is stored
+  raw in Volts and is not filtered by it
 - One `.acq` file per session, holding **both seats**. Filename encodes them as
   `L<leftID>.R<rightID>.acq`, with `0000` for an empty seat
 - Two files hold two enrolled participants each, so channel selection must be by
   seat, not by variance. See `docs/discrepancies.md` B4
-- Trigger encoding differs by rig: `Biopac_Right` sends codes as-is at port
-  `0xD030`; `Biopac_Left` sends `code * 16` at port `0xDFF8`. Decoders must
-  branch on `belt_sessions.trigger_device`
+- **Trigger encoding is a nibble split, verified 2026-07-31.** The two rigs write
+  to different physical wires, not merely different numbers:
+  `Biopac_Right` (port `0xD030`, shift 1) uses the **low** nibble, bits 0 to 3;
+  `Biopac_Left` (port `0xDFF8`, shift 16) uses the **high** nibble, bits 4 to 7.
+  All codes fit in 4 bits, so two participants can share one recording without
+  colliding. A dual file decodes to two complete independent sessions
+- **An idle nibble floats high.** On a right-rig recording the untouched high
+  nibble reads `0xF0`, so `Experiment Triggers` idles at 240 and trial start
+  (code 10) appears as **250**. Decode by masking the rig's nibble, never by
+  dividing by the shift and never by subtracting a global idle: dual-occupancy
+  files have no single idle level
 - The setup verification cascade writes trial codes before session start. Drop
   everything before the session-start code (1)
 - No absolute clock. Aligned by matching trial-start triggers to software trial
@@ -69,17 +99,23 @@ The `calib_breathe` label overruns the actual pacing by about 3.1 s because
 - Drift is roughly 384 ms per session, close to the 373 ms of browser clock
   wander, so the correction is largely absorbing browser timing rather than
   acquisition hardware error
-- **[NEEDS INPUT]** RSP100C gain and filter settings
 
 ## Trigger vocabulary
 
-Codes 1 session start, 2/3 pre-baseline start/end, 4/5 phase 2 start/end, 6/7
-phase 3 start/end, 8/9 post-baseline start/end, 10 trial start, 12 trial end, 13
-session end.
+Codes 1 session start, 2/3 Block 2 start/end, 4/5 Block 3 start/end, 6/7 Block 4
+start/end, 8/9 Block 5 start/end, 10 trial start, 12 trial end, 13 session end.
 
-**Code 11 (condition onset) is defined but never emitted.** Removed because it
-disrupted pacer animation timing. Expect two codes per trial, not three. Condition
-onset is reconstructed as trial start plus two baseline breaths.
+**Code 11 (condition onset) is never emitted during a session.** Removed because
+it disrupted pacer animation timing. Expect two codes per trial, not three.
+Condition onset is reconstructed as trial start plus two baseline breaths.
+
+Code 11 does appear in recordings, but only from `sendTestCascade`, the setup
+verification sweep that fires all 13 codes before session start. Dropping
+everything before the session-start code removes it. Verified: after that drop,
+code 11 count is zero in every session checked.
+
+Trial-count checks must tolerate a repeated block code. Participant 3997 emitted
+code 7 (Block 4 end) twice.
 
 Code 0 is the line-clear, not a marker.
 
@@ -104,7 +140,7 @@ participant's on-screen preview.
 - Combine by calibrated weights, then low-pass at 0.6 Hz
 - 4th-order Butterworth, applied forwards and backwards, zero phase
 - Everything on a common 25 Hz grid
-- Calibration weights fitted against the **reconstructed pacer** on the Phase 1
+- Calibration weights fitted against the **reconstructed pacer** on the Block 1
   window only, never against the BioPac signal. The BioPac-target fit is retained
   as a sensitivity analysis and labelled an upper bound
 - Device lag searched over plus or minus 2000 ms. Flag negative lag or lag above
@@ -113,19 +149,31 @@ participant's on-screen preview.
   agreement measures with correction and others without; recompute everything
   consistently
 
-Six candidate calibration models exist (`mirrorCalibration.js`), and the winner
-varies by participant. That is why EH3 exists.
+Six candidate calibration models are defined in `breathUtils.js` `fitBestModel`
+(`mlr` and `pca`, each on a wide or tight band, `mlr` also with a 0.6 Hz smooth).
+**In the live software only four can ever win**: the PCA branch passes the same
+column three times, so it is always singular and always skipped. See
+`docs/discrepancies.md` B7. `R/calibration.R` evaluates all six correctly, so the
+offline label may differ from `belt_sessions.calib_model_label`. The offline one
+is authoritative for EH3 and `selected_model_freq`.
+
+Under collinear axes the six often score within noise of each other, so
+`fit_calibration` also returns `model_margin` (winner minus runner-up). EH3 is
+only interpretable where that margin is meaningful. See C6.
 
 ## Design facts
 
-- Phase 2 is 3 conditions x 3 repetitions, randomised. Not nine distinct rates
+- Block 3 is 3 conditions x 3 repetitions, shuffled per participant by
+  Fisher-Yates. Not nine distinct rates, and **not counterbalanced**: there is no
+  rotation across participants. Change is plus or minus 25% of the 4000 ms
+  period, which is asymmetric in rate (15 bpm to 20 or 12)
 - Condition onset is computed, not measured: trial start plus 8000 ms
-- Phase 3 ratings are confidence (6-point) and alertness (6-point, worded as
+- Block 4 ratings are confidence (6-point) and alertness (6-point, worded as
   activation in the software)
 - QUEST: Weibull, slope 3.5, guess 1/3, lapse 0.02. Prior mean log10(0.5 s),
   SD 0.25 log units. 46 log-spaced levels from 0.1 to 2.0 s
 - Stopping: both posterior SDs below 0.10 log units with at least 10 updating
-  trials each, or 60 Phase 3 trials
+  trials each, or 60 Block 4 trials
 - Trials arrive in shuffled blocks of 5: 2 on the less certain staircase, 2 on
   the other, 1 catch trial. Catch trials never update
 - Inter-trial time exceeds task time, because trials are participant-initiated.

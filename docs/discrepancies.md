@@ -162,10 +162,17 @@ correct**. But there is no low-pass before the stride, so any content above
 `signal::decimate`, whose internal Chebyshev anti-alias filter is why its
 `breath_pipeline.R` notes "no separate LP pass is needed before decimation".
 
-Whether this actually matters depends on the RSP100C's own low-pass setting. If
-the amplifier is already band-limited to 1 or 10 Hz, almost nothing survives to
-alias. **This is a concrete reason the outstanding RSP100C settings matter**, not
-just a documentation gap.
+**Updated 2026-07-31.** There is no RSP100C. The system is a **BN-RSPEC
+BioNomadix Respiration and ECG wireless system**, which has no operator-settable
+gain or filter: bandwidth is fixed in hardware and its value is not yet
+documented. The AcqKnowledge template was checked and imposes nothing: all 17
+channels are raw at 2000 Hz, and the template governs display and derived
+channels only.
+
+So the only anti-alias protection ahead of decimation is a fixed hardware
+bandwidth of unknown value. That does not make aliasing likely, since respiration
+transducers are inherently low-bandwidth, but it does mean the safety of stride
+decimation cannot currently be asserted from documentation.
 
 **Action.** Switch to `signal::decimate`, which removes the question regardless
 of the amplifier setting, and assert that `raw_hz %% RESP_HZ == 0` rather than
@@ -360,6 +367,52 @@ live gate participants were actually held to) and `mlr_r_calib_lagcorr` (the
 model quality after removing the estimated lag). The extraction script should
 carry both, and the simulation should draw lag first and derive the fit ceiling
 from it rather than sampling the two independently.
+
+### B10. Trigger codes are a nibble split, not a numeric offset
+
+Verified against the AcqKnowledge template and three recordings (2026-07-31).
+
+The trigger reaches the MP160 as **eight separate physical lines**,
+`Digital (STP Input 0..7)`, which AcqKnowledge also sums into a derived
+`Experiment Triggers` channel. The two rigs use different **wires**, not merely
+different numbers:
+
+| rig | port | shift | nibble | bits |
+|---|---|---|---|---|
+| `Biopac_Right` | `0xD030` | 1 | low | 0 to 3 |
+| `Biopac_Left` | `0xDFF8` | 16 | high | 4 to 7 |
+
+Every event code fits in 4 bits, which is what makes the split work.
+
+**An idle nibble floats high.** On a right-rig recording the untouched high
+nibble reads `0xF0`, so `Experiment Triggers` idles at 240 and trial start
+appears as **250**, not 10. Confirmed on 14542: the channel takes values 240 plus
+0 to 13, and the per-line counts match codes 10 and 12 exactly, with STP3 highest
+because bit 3 is set by both.
+
+Decoding must therefore **mask the rig's nibble**. Dividing by the shift is wrong,
+and subtracting a global idle is wrong too, because dual-occupancy files have no
+single idle level. `R/seatmap.R` masks.
+
+Verification on a dual file, `L17734.R14701.acq`:
+
+| nibble | rig | participant | trial starts | trial ends | code 11 |
+|---|---|---|---|---|---|
+| low | right | 14701 | 34 | 34 | 0 |
+| high | left | 17734 | 33 | 33 | 0 |
+
+Two complete independent sessions in one recording, each with block codes 1 to 9
+and 13 exactly once. On the single-occupancy `L0000.R3997.acq` the high nibble is
+idle, as expected.
+
+Two further facts:
+
+- **Code 11 does appear in recordings**, but only from `sendTestCascade`, which
+  fires all 13 codes at setup. After dropping everything before session start its
+  count is zero in every session checked. This confirms A2 rather than
+  contradicting it.
+- **Block codes can repeat.** 3997 emitted code 7 (Block 4 end) twice. The
+  trigger-count check in Task 3 must tolerate this rather than failing.
 
 ### C6. EH3 may be testing an arbitrary label
 

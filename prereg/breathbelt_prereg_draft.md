@@ -26,7 +26,9 @@ Recruited through the university SONA portal, from either the course-credit or t
 
 **Accelerometer belt.** Polar H10 chest strap, worn directly against the skin. Connects to the study software over Bluetooth Low Energy through a Chrome browser. Provides three-axis acceleration and heart rate.
 
-**Stretch belt.** BioPac system: MP160 acquisition unit, RSP100C respiration amplifier, BioNomadix wireless respiration transducer (BN-RESP-XDCR). Worn over the participant's clothing.
+**Stretch belt.** BioPac system: MP160 acquisition unit with a BN-RSPEC BioNomadix Respiration and ECG wireless system. The transmitter is worn by the participant and the receiver module feeds the MP160. Worn over the participant's clothing.
+
+There is no RSP100C amplifier in this setup and therefore no operator-configurable gain or filter stage. The BioNomadix system's bandwidth is fixed in hardware, so the only signal conditioning before digitisation is whatever that hardware imposes. This matters for preprocessing: it is the sole anti-alias protection ahead of decimation, so decimation is performed with an explicit anti-alias filter rather than by taking every Nth sample.
 
 **Pacer.** A visual pacing stimulus, an avatar circle that expands and contracts, coded directly into the study software. Participants inhale as the circle expands and exhale as it contracts.
 
@@ -49,15 +51,23 @@ Recruited through the university SONA portal, from either the course-credit or t
 
 Five blocks, run consecutively in one session.
 
-**Phase 1: Calibration.** The participant follows the pacer for four breath cycles at a 4 second period, after a 1 second fixation hold. Roughly 19 seconds in total. This block establishes how each participant's chest movement projects onto the accelerometer's three axes, which depends on body shape, posture, and exactly how the strap sits. Nothing is measured about the participant here; the block exists to derive the transformation used to turn three-axis acceleration into a single breathing signal.
+Blocks are numbered 1 to 5 throughout. Note that the recorded data does **not** use this numbering: the accelerometer files label blocks 3 and 4 as `phase2` and `phase3`, and `belt_trials.phase` codes them 2 and 3. The mapping is fixed and is given in Section 1.6.
+
+**Block 1: Calibration.** The participant follows the pacer for four breath cycles at a 4 second period, after a 1 second fixation hold. Roughly 19 seconds in total. This block establishes how each participant's chest movement projects onto the accelerometer's three axes, which depends on body shape, posture, and exactly how the strap sits. Nothing is measured about the participant here; the block exists to derive the transformation used to turn three-axis acceleration into a single breathing signal.
 
 At the end of the block the participant is shown their reconstructed breathing signal plotted against the pacer, with a fit score, and may accept it or repeat the block.
 
-**Free breathing, pre (120 s).** The participant breathes normally with no pacer displayed. This block is ecological: it tests whether the accelerometer recovers natural, unpaced breathing.
+**Block 2: Free breathing 1 (120 s).** The participant breathes normally with no pacer displayed. This block is ecological: it tests whether the accelerometer recovers natural, unpaced breathing.
 
-**Phase 2: Fixed rates.** Nine trials, presented in a random order, three at each of three conditions. Each trial is four breaths: the first two always at the 4 second baseline period, the last two at the condition period. Conditions are 3 seconds (faster), 4 seconds (unchanged), and 5 seconds (slower). Participants make no response in this block. It provides a three-way comparison at known rates, across pacer, stretch belt, and accelerometer.
+**Block 3: Fixed-rate paced breathing.** Nine trials, three at each of three conditions. Each trial is four breaths: the first two always at the 4 second baseline period, the last two at the condition period. Conditions are 3 seconds (faster), 4 seconds (unchanged), and 5 seconds (slower). Participants make no response in this block. It provides a three-way comparison at known rates, across pacer, stretch belt, and accelerometer.
 
-**Phase 3: Adaptive staircase.** An adaptive procedure estimates each participant's threshold for detecting a change in breathing rate. Two independent staircases run interleaved, one for rate increases and one for rate decreases.
+**Change magnitude.** The imposed change is plus or minus 25% *of the baseline period*: 4000 ms becomes 3000 ms or 5000 ms. The software records this as `proportion_mag = (condition_period - 4000) / 4000`, taking values -0.25, 0, and +0.25.
+
+This is deliberately stated in period rather than rate, because the two are not interchangeable and H3 concerns rate. A symmetric change in period is **asymmetric in rate**: 15 breaths per minute becomes 20 (an increase of 33%) or 12 (a decrease of 20%). Analyses of rate dependence use the realised rate, not the nominal plus or minus 25%.
+
+**Trial order.** The nine trials are a fixed set (three same, three faster, three slower) shuffled by Fisher-Yates independently for each participant. This is randomisation without replacement within participant. It is **not** counterbalancing: there is no rotation of orders across participants and no constraint on run lengths, so condition order is not balanced against position by design. With nine trials and three conditions, order effects are absorbed into participant-level variance rather than controlled.
+
+**Block 4: Adaptive staircase.** An adaptive procedure estimates each participant's threshold for detecting a change in breathing rate. Two independent staircases run interleaved, one for rate increases and one for rate decreases.
 
 Each trial is four breaths: the first two always at the 4 second baseline period, the last two shifted faster or slower by the amount the staircase currently proposes. After each trial the participant reports:
 
@@ -69,7 +79,7 @@ Trials are delivered in shuffled blocks of five: two trials on whichever stairca
 
 The block ends when both staircases are sufficiently certain (posterior standard deviation below 0.10 log units) and each has contributed at least 10 updating trials, or at a hard cap of 60 trials, whichever comes first. Trials are participant-initiated, so block duration varies.
 
-**Free breathing, post (120 s).** Identical to the pre block. Tests whether agreement between the devices degrades over the course of wearing them.
+**Block 5: Free breathing 2 (120 s).** Identical to Block 2. Tests whether agreement between the devices degrades over the course of wearing them.
 
 ### Questionnaires
 
@@ -95,11 +105,27 @@ Debrief form, equipment removal, compensation within one week. Total session len
 - How good or energised do you feel? (sad to excited)
 - How settled or on-edge do you feel? (calm to tense)
 
-The two diagonal ratings are combined to give a position in valence by arousal space, plus a measure of how mixed the response is.
+**Coding.** Each rating is centred on its neutral point of 4 and scaled by 3, placing it on [-1, +1]:
 
-**Confidence (each Phase 3 trial).** Six-point scale, anchored "no idea" to "certain".
+- `PA = (pos_rating - 4) / 3`, running -1 sad to +1 excited
+- `NA = (neg_rating - 4) / 3`, running -1 calm to +1 tense
 
-**Alertness (each Phase 3 trial).** Six-point scale, anchored "very tired" to "very alert". The item is worded in the software as activation, and indexes the arousal construct.
+Because the two items lie on the two diagonals of the circumplex, valence and arousal are a 45 degree rotation of that pair. The software stores the rotated coordinates as `composite_x` and `composite_y`. Note that stored `composite_y` is **positive for high arousal**; any plot drawn in screen coordinates must negate it, or alert responses render in the calm quadrant.
+
+**Mixedness.** Reported as Griffin's ambivalence index over the positive parts of the two ratings:
+
+```
+p = max(0, PA);  n = max(0, NA)
+ambivalence = (p + n) / 2 - |p - n|
+```
+
+This peaks only when both dimensions are elevated **and** similar, which is the mixed-feelings construct. Values are clamped at 0 per response before averaging, not after: a consistently one-sided respondent scores -0.5, so averaging first and clamping second would collapse every summary to zero.
+
+The exported `ambivalence_mag` column is **not** used. It is the Euclidean distance between the two selected points, which measures overall intensity rather than mixedness: a maximally cheerful and maximally relaxed response (7 positive, 3 negative) scores the highest value in the data on it, while being not mixed at all. Griffin's index correctly scores that response 0.
+
+**Confidence (each Block 4 trial).** Six-point scale, anchored "no idea" to "certain".
+
+**Alertness (each Block 4 trial).** Six-point scale, anchored "very tired" to "very alert". The item is worded in the software as activation, and indexes the arousal construct.
 
 ## 1.6 Data recording and synchronisation
 
@@ -109,11 +135,25 @@ The two diagonal ratings are combined to give a position in valence by arousal s
 
 **Event codes.** Sent to the BioPac trigger channel at each boundary: session start, block start and end for each of the five blocks, trial start, and trial end. A condition-onset code was deliberately removed from the software because emitting it disrupted pacer animation timing, which is the more critical requirement. The condition boundary within each trial is instead taken from the software's own trial record, where it is defined as trial start plus two baseline breaths.
 
+**Block numbering in the data.** The exposition numbers blocks 1 to 5. The recorded files do not. The mapping is fixed:
+
+| Block | Name | Accelerometer `phase` label | `belt_trials.phase` |
+|---|---|---|---|
+| 1 | Calibration | `calib_fixation`, `calib_breathe` | not applicable |
+| 2 | Free breathing 1 | `baseline` | not applicable |
+| 3 | Fixed-rate paced | `phase2` | 2 |
+| 4 | Adaptive staircase | `phase3` | 3 |
+| 5 | Free breathing 2 | `post_baseline` | not applicable |
+
+Blocks 3 and 4 are therefore off by one from the `phase2` and `phase3` labels. `inter_trial` and `idle` also occur as accelerometer phase labels and belong to no block.
+
 **Session clock.** The stretch belt has no absolute clock, only time from the start of recording. The two recordings are aligned by matching trial-start event codes to the software's trial-onset times in recording order, then fitting a linear correction across all trials to absorb accumulated divergence between the two clocks.
 
 **Pacer signal.** The pacer position is deterministic: a sine at a known period, anchored to a known onset time. It is reconstructed analytically from the software's trial records rather than read from the recorded data.
 
-**[NEEDS INPUT]** RSP100C amplifier gain and filter settings. Omitted for now.
+**Amplifier.** No configurable amplifier stage exists: the BN-RSPEC BioNomadix system has fixed hardware bandwidth. **[NEEDS INPUT]** the datasheet bandwidth, to be cited rather than measured.
+
+**AcqKnowledge template.** The acquisition template defines 17 channels at 2000 Hz: two respiration, two ECG, eight digital trigger lines, one derived trigger channel, two heart rate and two respiration rate calculation channels. The template governs display and derived channels only; the two respiration channels are stored raw in Volts and are not filtered by it.
 
 ---
 
@@ -133,7 +173,7 @@ Nuisance parameters. None appears in any decision rule in Section 5.
 - Within-participant standard deviation of breath-level duration differences
 - Between-participant standard deviation of the breath-depth bias
 - Between-participant standard deviation of each breathing-variability measure
-- Distribution of Phase 3 trial counts
+- Distribution of Block 4 trial counts
 - Distribution of breath counts
 - Distribution of calibration fit
 - Distribution of estimated device lag
@@ -207,11 +247,13 @@ The confirmatory aim is the instrument comparison. A secondary, wholly explorato
 
 ## Exploratory: interoception
 
-**RQ9.** Does self-reported body awareness relate to how people actually breathe, in rate, variability, or pacer adherence?
+The sample affords no useful power for between-participant association tests, each of which has one observation per person. These questions ask only whether the estimated relationships are **directionally consistent** with prior work. They are labelled ERQ to keep them out of the confirmatory sequence.
 
-**RQ10.** Are people's ability to detect breathing-rate changes, their confidence in those judgements, and their self-reported body awareness related in the way prior work suggests?
+**ERQ1.** Are people's ability to detect breathing-rate changes, their confidence in those judgements, and their self-reported body awareness related in the way prior work suggests?
 
-RQ10 was considered for confirmatory testing and dropped. It rests on a predicted near-zero association, which requires an equivalence test, and bounding a correlation at plus or minus 0.20 needs over 200 participants. Testing the contrast between the two correlations directly is cheaper but still reaches only about 0.74 power at 100 participants under generous assumptions. Neither is feasible here, so RQ10 is reported descriptively.
+**ERQ2.** Does self-reported body awareness relate to how people actually breathe, in rate, variability, or pacer adherence?
+
+ERQ1 was considered for confirmatory testing and dropped. It rests on a predicted near-zero association, which requires an equivalence test, and bounding a correlation at plus or minus 0.20 needs over 200 participants. Testing the contrast between the two correlations directly is cheaper but still reaches only about 0.74 power at 100 participants under generous assumptions. Neither is feasible here, so ERQ1 is reported descriptively.
 
 ---
 
@@ -257,7 +299,7 @@ Serves RQ8. Within a participant, trials on which they report feeling more alert
 ## Exploratory
 
 **EH1. Body awareness relates to how people breathe.**
-Serves RQ9. Higher **interoceptive sensibility** is associated with slower, less variable breathing and closer pacer adherence.
+Serves ERQ2. Higher **interoceptive sensibility** is associated with slower, less variable breathing and closer pacer adherence. Pacer adherence is included here rather than in a separate hypothesis.
 
 **EH2. Waveform shape is best recovered at ordinary breathing rates.**
 
@@ -275,13 +317,19 @@ This is the only hypothesis that tests waveform shape rather than summary statis
 **EH3. The chosen calibration model may act as a hidden moderator.**
 Calibration selects, per participant, whichever of six candidate transformations best reconstructs the pacer. Different participants therefore run under different transformations. We will describe how often each is selected, and test whether the selected model predicts subsequent agreement between the belts. Not a focal hypothesis.
 
-**EH4. Accuracy and self-report may come apart, while confidence and self-report does not.**
-Serves RQ10. Prior work suggests that **detection threshold** is largely unrelated to self-reported **interoceptive sensibility**, while **mean confidence** tracks sensibility closely. Both correlations, and the contrast between them, are reported descriptively.
+**EH4. Directional consistency with prior findings.**
+Serves ERQ1. Prior work suggests that accuracy and self-report come apart while confidence and self-report do not. Two parts:
 
-This study cannot test that pattern confirmatorily. Half of it is a prediction of no association, which cannot be supported by a non-significant result and would need a sample well beyond what is feasible here. Three commitments follow, fixed in advance:
+- **(a)** **Detection threshold** correlates weakly or not at all with self-reported **interoceptive sensibility**.
+- **(b)** **Mean confidence** correlates substantially with **interoceptive sensibility**.
+
+Part (a) is a prediction of near-zero association. A non-significant result cannot support it, and the sample needed to bound the correlation properly is far beyond what is feasible here, so (a) is assessed descriptively by asking whether the estimated parameter is near zero.
+
+Four commitments, fixed in advance:
 
 - Both correlations are reported with confidence intervals, alongside the contrast between them.
-- Results are described as consistent or inconsistent with the prior pattern, never as a replication of it.
+- Directional consistency is stated explicitly: for (b), a positive point estimate; for (a), whether the confidence interval falls inside, overlaps, or excludes a region of practical equivalence of plus or minus 0.20.
+- Results are described as consistent or inconsistent with the prior pattern. No claim is made that the prior finding has been reproduced, in either direction.
 - A non-significant threshold-by-sensibility correlation will **not** be read as evidence of dissociation.
 
 ---
@@ -296,7 +344,7 @@ Definitions for every term used in Section 3, with its source.
 |---|---|---|---|
 | **Stretch belt signal** | Respiration channel from the BioPac amplifier, recorded at 2000 Hz, decimated to 25 Hz. The active channel is identified by variance, not by slot position, because slot order does not reliably map to seat. | BioPac acquisition file | Defined |
 | **Accelerometer signal** | Single breathing waveform reconstructed from three-axis acceleration using participant-specific weights. Axes are band-pass filtered from 0.05 to 1.0 Hz, combined by the calibrated weights, then low-pass filtered at 0.6 Hz. All filters are 4th-order Butterworth applied forwards and backwards so no phase shift is introduced. | Accelerometer session file plus calibration weights | Defined |
-| **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three band-passed acceleration axes, fitted on the Phase 1 calibration window only. Refitted offline; the weights computed live in the software are used only for the participant's on-screen preview. | Fitted from Phase 1, approximately 3,900 samples | Defined |
+| **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three band-passed acceleration axes, fitted on the Block 1 calibration window only. Refitted offline; the weights computed live in the software are used only for the participant's on-screen preview. | Fitted from Block 1, approximately 3,900 samples | Defined |
 | **Pacer signal** | Sine wave at the commanded period, anchored to the recorded block or trial onset. Reconstructed analytically. The recorded pacer column is empty in the data files and is not used. | Software trial records | Defined |
 | **Common time base** | Both signals resampled to a uniform 25 Hz grid. Accelerometer sample times are reconstructed by back-assigning from each packet timestamp at 4.916 ms intervals, the empirically measured sample period. | Preprocessing | Defined |
 | **Device lag** | Time offset between the two signals, estimated by shifting one against the other until agreement peaks. Searched over plus or minus 2000 ms. | Preprocessing | Defined |
@@ -310,21 +358,21 @@ Definitions for every term used in Section 3, with its source.
 | **Breath depth** | Peak-to-trough amplitude of each breath cycle, in each device's native units. Compared after within-participant standardisation, since the units are not commensurable. | Both devices | Defined |
 | **Breath count** | Number of detected onsets in a defined window. | Both devices | Defined |
 | **Breathing variability** | Three measures over each free-breathing block: the spread of breath durations relative to their mean; the typical size of the change from one breath to the next; and the predictability of the sequence. | Both devices | Defined |
-| **Waveform shape agreement** | Frequency-resolved agreement between the two signals across the respiratory band, after undoing the derivative relationship. See Section 5.8. | Both devices | Defined |
+| **Waveform shape agreement** | Frequency-resolved agreement between the two signals across the respiratory band, after undoing the derivative relationship. See Section 5.11. | Both devices | Defined |
 
 ## 4.3 Task measures
 
 | Term | Definition | Source | Status |
 |---|---|---|---|
-| **Commanded period** | Period the pacer was instructed to display: 4000 ms for the first two breaths of every trial; 3000, 4000, or 5000 ms in Phase 2; 4000 ms plus or minus the staircase magnitude in Phase 3. | Software trial records | Defined |
-| **Change magnitude** | Size of the rate change on a Phase 3 trial, in seconds, sampled from 46 logarithmically spaced levels between 0.1 and 2.0 s. | Software trial records | Defined |
-| **Direction judgement** | Three-option response after each Phase 3 trial: faster, slower, or no change. | Software trial records | Defined |
+| **Commanded period** | Period the pacer was instructed to display: 4000 ms for the first two breaths of every trial; 3000, 4000, or 5000 ms in Block 3; 4000 ms plus or minus the staircase magnitude in Block 4. | Software trial records | Defined |
+| **Change magnitude** | Size of the rate change on a Block 4 trial, in seconds, sampled from 46 logarithmically spaced levels between 0.1 and 2.0 s. | Software trial records | Defined |
+| **Direction judgement** | Three-option response after each Block 4 trial: faster, slower, or no change. | Software trial records | Defined |
 | **Detection threshold** | Change magnitude a participant can detect reliably, estimated separately for the faster and slower staircases by an adaptive Bayesian procedure. Prior centred on 0.5 s with a standard deviation of 0.25 log units; underlying psychometric function has a slope of 3.5, a guessing rate of one in three, and a lapse rate of 0.02. | Staircase posterior | Defined |
 | **Pacer adherence** | Closeness between the participant's actual breathing and the commanded pacer, per trial. Two forms: continuous, the correlation between the device signal and the reconstructed pacer; and categorical, whether the observed change in breath duration went in the cued direction. | Derived, both devices | Defined |
 | **Direction correct** | Categorical adherence, ported from the prior study's analysis script. Mean duration of breaths 3 and 4 minus mean duration of breaths 1 and 2, compared in sign to the cued change. | Derived, both devices | Defined |
-| **Confidence** | Six-point rating after each Phase 3 trial, "no idea" to "certain". | Software trial records | Defined |
-| **Mean confidence** | Participant's average confidence across all Phase 3 trials. | Derived | Defined |
-| **Alertness** | Six-point rating after each Phase 3 trial, "very tired" to "very alert". Indexes arousal. | Software trial records | Defined |
+| **Confidence** | Six-point rating after each Block 4 trial, "no idea" to "certain". | Software trial records | Defined |
+| **Mean confidence** | Participant's average confidence across all Block 4 trials. | Derived | Defined |
+| **Alertness** | Six-point rating after each Block 4 trial, "very tired" to "very alert". Indexes arousal. | Software trial records | Defined |
 
 ## 4.4 Self-report measures
 
@@ -339,7 +387,7 @@ Definitions for every term used in Section 3, with its source.
 |---|---|---|---|
 | **Signal quality index** | Explained variance ratio. Over a rolling 15 s window of the band-passed three-axis acceleration, the proportion of total movement variance that lies along the calibrated breathing direction. Bounded 0 to 1. Falls when the participant shifts posture, the strap slips, or non-respiratory movement intrudes. Not recorded during sessions; computed offline from raw acceleration and the calibration weights. Tuning to be performed on these data. **[SIM]** | Computed offline | Defined, to be tuned |
 | **Selected calibration model** | Which of six candidate transformations won calibration for each participant: multiple regression or principal component analysis, on a wide or narrow filter band, with or without a smoothing step. | Session record | Defined |
-| **Calibration fit** | Correlation between the reconstructed accelerometer signal and the pacer during Phase 1. | Session record and refit | Defined |
+| **Calibration fit** | Correlation between the reconstructed accelerometer signal and the pacer during Block 1. | Session record and refit | Defined |
 | **Alignment residual** | Per-trial discrepancy between the two devices' clocks after linear correction. Diagnostic. | Preprocessing | Defined |
 
 ## 4.6 Expected observation counts
@@ -348,8 +396,8 @@ From the one fully processed participant, for design purposes.
 
 | Unit | Count per participant |
 |---|---|
-| Phase 2 trials | 9, fixed |
-| Phase 3 trials | 25 observed; range 20 to 60 by stopping rule |
+| Block 3 trials | 9, fixed |
+| Block 4 trials | 25 observed; range 20 to 60 by stopping rule |
 | Paced breaths | Approximately 136 |
 | Free-breathing breaths | Approximately 60, across both blocks |
 | Total breaths | Approximately 196 |
@@ -360,7 +408,7 @@ From the one fully processed participant, for design purposes.
 
 # 5. Data Analysis Plan
 
-Written to supply the quantities a power simulation needs: the estimand, the unit of analysis, the number of observations available, and the parameters that must be assumed. Section 5.11 collects those parameters.
+Written to supply the quantities a power simulation needs: the estimand, the unit of analysis, the number of observations available, and the parameters that must be assumed. Section 5.12 collects those parameters.
 
 ## 5.1 Preprocessing
 
@@ -370,8 +418,8 @@ Fixed in advance and applied identically to every participant.
 2. **Reconstruct accelerometer sample times.** Back-assign from each packet timestamp at 4.916 ms per sample, the measured rate. This replaces the nominal 5.000 ms, which introduces about 2.9 ms of error at the start of each packet.
 3. **Align the two recordings.** Match trial-start event codes to software trial onsets in recording order. Discard every event code occurring before the session-start code, which removes the setup verification cascade. Fit a linear correction across all matched trials. Extract each trial anchored on its own event code, so alignment error does not accumulate.
 4. **Filter.** Band-pass each acceleration axis from 0.05 to 1.0 Hz. Fourth-order Butterworth, applied forwards and backwards.
-5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Phase 1 window only. Apply to the whole session, then low-pass at 0.6 Hz.
-6. **Correct for lag.** Estimate device lag by cross-correlation over plus or minus 2000 ms, per participant, on the Phase 1 window. Apply the same lag throughout the session.
+5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Block 1 window only. Apply to the whole session, then low-pass at 0.6 Hz.
+6. **Correct for lag.** Estimate device lag by cross-correlation over plus or minus 2000 ms, per participant, on the Block 1 window. Apply the same lag throughout the session.
 7. **Detect breath onsets.** Independently in each device's signal, using the same trough-detection rule.
 8. **Compute the signal quality index** in rolling 15 s windows.
 
@@ -422,7 +470,7 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 **Tests.**
 
-1. **Detection agreement.** Match each accelerometer onset to a stretch belt onset within a tolerance window. Compute a balanced detection score combining the proportion of accelerometer onsets that correspond to real ones with the proportion of real onsets the accelerometer found. Computed on lag-corrected onsets, with the lag fixed from Phase 1 and not refitted.
+1. **Detection agreement.** Match each accelerometer onset to a stretch belt onset within a tolerance window. Compute a balanced detection score combining the proportion of accelerometer onsets that correspond to real ones with the proportion of real onsets the accelerometer found. Computed on lag-corrected onsets, with the lag fixed from Block 1 and not refitted.
 
    The stretch belt is the reference. The tolerance window must exceed the timing precision of the recording itself. Measured accelerometer timestamp jitter is 35 ms standard deviation with a 95th percentile of 74 ms, so a tolerance tighter than about 75 ms is not supportable. Proposed tolerance: 150 ms. **[SIM]**
 
@@ -440,14 +488,14 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 **Estimand.** The interaction between imposed rate and device, separately for duration error and depth error.
 
-**Unit.** Trial, nested within participant. Nine Phase 2 trials plus approximately 25 Phase 3 trials.
+**Unit.** Trial, nested within participant. Nine Block 3 trials plus approximately 25 Block 4 trials.
 
 **Tests.**
 
 - **(a) Duration.** Mixed-effects model with duration error as outcome, imposed rate as predictor, random intercepts and slopes by participant. The prediction is that rate has no effect. Because this is a claim of no effect, it is tested with equivalence bounds on the rate coefficient, not by failing to reject a null. **[SIM]**
 - **(b) Depth.** Same model structure with depth error as outcome. The prediction is a positive relationship: error grows as the period shortens. Tested conventionally.
 
-**Rate range caveat.** Phase 2 spans only three levels, 3, 4, and 5 s, so it provides limited leverage on rate dependence. Phase 3 spans a wider range, from 2.0 to 6.0 s, but at unevenly sampled levels concentrated near each participant's threshold. Both blocks are pooled, with block included as a covariate, and the effective range of imposed rates achieved is reported.
+**Rate range caveat.** Block 3 spans only three levels, 3, 4, and 5 s, so it provides limited leverage on rate dependence. Block 4 spans a wider range, from 2.0 to 6.0 s, but at unevenly sampled levels concentrated near each participant's threshold. Both blocks are pooled, with block included as a covariate, and the effective range of imposed rates achieved is reported.
 
 **For simulation.** Requires: equivalence bounds on the duration by rate coefficient; expected slope of depth error on rate; number of distinct rate levels realised per participant; between-participant variance in slopes.
 
@@ -479,7 +527,7 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 **Estimand.** Agreement between devices on three variability measures.
 
-**Unit.** Free-breathing block. Two per participant, each 120 s, approximately 30 breaths each.
+**Unit.** Free-breathing block, i.e. Blocks 2 and 5. Two per participant, each 120 s, approximately 30 breaths each.
 
 **Measures.** Spread of breath durations relative to their mean; typical size of the change from one breath to the next; predictability of the sequence, using sample entropy.
 
@@ -493,7 +541,7 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 ## 5.8 H6: Within-session stability
 
-**Estimand.** Change in agreement from the pre to the post free-breathing block, and whether that change is predicted by signal quality.
+**Estimand.** Change in agreement from Block 2 to Block 5, the two free-breathing blocks, and whether that change is predicted by signal quality.
 
 **Unit.** Block, and within-block windows.
 
@@ -527,7 +575,7 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 **Estimand.** Within-participant relationship between trial-level alertness and trial-level pacer adherence, and whether it differs by device.
 
-**Unit.** Phase 3 trial. Approximately 25 per participant.
+**Unit.** Block 4 trial. Approximately 25 per participant.
 
 **Test.** Mixed-effects model with adherence as outcome and alertness as predictor, alertness centred within participant to isolate within-person fluctuation from between-person differences. Random intercepts and slopes by participant. Fitted separately for each device, then tested for equivalence of the alertness coefficient across devices. **[SIM]**
 
@@ -537,7 +585,7 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 No corrections for multiple comparisons; reported as exploratory throughout.
 
-**EH1.** Correlations between sensibility and mean breath duration, breathing variability, and mean adherence, in the free-breathing blocks.
+**EH1 (serves ERQ2).** Correlations between interoceptive sensibility and each of mean breath duration, breathing variability, and mean pacer adherence. Breath duration and variability are taken from the free-breathing blocks (2 and 5); adherence is taken from the paced blocks (3 and 4), since adherence is undefined without a pacer. Reported with confidence intervals and as directional consistency only, per the limits on ERQ2.
 
 **EH2. Waveform shape.**
 
@@ -550,7 +598,7 @@ Route (b) is not appropriate for this hypothesis. Narrow band-passing discards e
 
 **Measure.** Magnitude-squared coherence across the respiratory band, a frequency-resolved measure bounded 0 to 1 that asks whether the two signals hold a consistent amplitude ratio and phase relationship at each frequency.
 
-**Caveat on estimation.** Coherence is biased upward when few independent segments are available. At 0.25 Hz, 120 s of free breathing yields very few. Welch segment length and overlap will be specified in advance, and significance assessed against a null built by phase-randomising one signal, rather than against a fixed threshold. Individual Phase 2 and Phase 3 trials are too short to support coherence at all; for those, shape is assessed instead by correlating time-normalised individual breath cycles between devices.
+**Caveat on estimation.** Coherence is biased upward when few independent segments are available. At 0.25 Hz, 120 s of free breathing yields very few. Welch segment length and overlap will be specified in advance, and significance assessed against a null built by phase-randomising one signal, rather than against a fixed threshold. Individual Block 3 and Block 4 trials are too short to support coherence at all; for those, shape is assessed instead by correlating time-normalised individual breath cycles between devices.
 
 **Free by-product.** The phase spectrum of the coherence gives a frequency-resolved lag estimate. If the device offset is a true time delay, phase rises linearly with frequency. If it is a fixed mechanical phase shift, phase is flat. Reported either way, as it bears on how lag should be corrected.
 
@@ -560,7 +608,7 @@ Route (b) is not appropriate for this hypothesis. Narrow band-passing discards e
 - Test: whether the selected model predicts subsequent agreement between devices, and whether calibration fit predicts agreement independently of which model won.
 - Rationale: participants running under different transformations are not running the same measurement, so this checks whether that heterogeneity matters.
 
-**EH4. Interoception pattern.**
+**EH4. Directional consistency with prior findings.**
 
 **Unit.** Participant. One observation per person, and the threshold estimate itself carries measurement error, so this is the least precise analysis in the study.
 
@@ -574,7 +622,9 @@ Route (b) is not appropriate for this hypothesis. Narrow band-passing discards e
 
 **Sensibility scoring.** Total score by default. Subscale correlations are reported uncorrected.
 
-**Interpretive limits, fixed in advance.** No claim of dissociation will be made from a non-significant threshold correlation. The study is not powered to support a null. This section is descriptive.
+**Directional consistency.** Reported explicitly for each part: for (b), whether the point estimate is positive; for (a), whether the confidence interval falls inside, overlaps, or excludes a region of practical equivalence of plus or minus 0.20. The region is a descriptive reference, not a decision rule.
+
+**Interpretive limits, fixed in advance.** No claim of dissociation will be made from a non-significant threshold correlation. The study is not powered to support a null. No result here is described as reproducing the prior finding, in either direction. This section is descriptive.
 
 ## 5.12 Parameters required for the power simulation
 
@@ -584,13 +634,13 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 
 | Parameter | Value |
 |---|---|
-| Phase 2 trials per participant | 9 |
-| Phase 3 trials per participant | 20 to 60; observed 25 |
+| Block 3 trials per participant | 9 |
+| Block 4 trials per participant | 20 to 60; observed 25 |
 | Paced breaths per participant | ~136 |
 | Free-breathing breaths per participant | ~60 |
 | Total breaths per participant | ~196 |
 | Free-breathing duration | 2 blocks of 120 s |
-| Distinct imposed rates, Phase 2 | 3 |
+| Distinct imposed rates, Block 3 | 3 |
 | Timestamp jitter, standard deviation | 35 ms |
 
 ### Effect sizes and margins, to be assumed
@@ -608,9 +658,9 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 
 ### Notes for the simulation
 
-1. **The binding constraint is H3, H5, H6, H7, or H8.** With the interoception replication moved to exploratory, no analysis operates at the participant level with a single observation per person. Requirements now sit in the range of roughly 40 to 96 participants, driven by the equivalence margins rather than by the design. Sample size should be set by whichever of these requires most.
+1. **The binding constraint is H3, H5, H6, H7, or H8.** With the interoception questions moved to exploratory, no analysis operates at the participant level with a single observation per person. Requirements now sit in the range of roughly 40 to 96 participants, driven by the equivalence margins rather than by the design. Sample size should be set by whichever of these requires most.
 2. **Equivalence tests dominate.** Six of the eight confirmatory hypotheses rest on equivalence testing, which typically needs larger samples than a difference test at the same margin. Margins should be justified as smallest effects of practical interest, not chosen for convenience.
-3. **Phase 3 trial count is a random variable**, governed by the stopping rule, not fixed. The simulation should draw it from a plausible distribution rather than fix it at 25, and should reflect that the trial cap truncates the upper tail.
+3. **Block 4 trial count is a random variable**, governed by the stopping rule, not fixed. The simulation should draw it from a plausible distribution rather than fix it at 25, and should reflect that the trial cap truncates the upper tail.
 4. **Exploratory analyses are not part of the sample size calculation.** EH1 through EH4 are reported at whatever precision the confirmatory sample affords. EH4 in particular would need well over 200 participants to test confirmatorily, which is out of scope.
 5. **Variance parameters come from the internal pilot; effect sizes do not.** Section 1.7 sets out exactly what is extracted and what is blocked. Margins and expected effects must come from prior literature or from stated smallest effects of interest, since no effect-size quantity is observed before the confirmatory analysis.
 6. **Assume a non-zero true bias.** Equivalence power peaks when the true difference is zero. The simulation assumes a bias of one quarter of the margin, so that the sample size does not rest on the most favourable case.
@@ -621,7 +671,7 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 
 | Item | Status |
 |---|---|
-| RSP100C gain and filter settings | **[NEEDS INPUT]** |
+| BN-RSPEC datasheet bandwidth | **[NEEDS INPUT]** |
 | Sample size and interim re-estimation point | Pending power simulation; see Section 1.7 |
 | Pilot participant list | **[NEEDS INPUT]** |
 | All equivalence margins and thresholds | Pending power simulation |
@@ -632,6 +682,6 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 
 1. **Belt order is not counterbalanced.** The accelerometer is always against the skin and always inside the stretch belt. Any systematic device difference is confounded with placement.
 2. **Calibration is brief.** Nineteen seconds, roughly 3,900 samples, to fit four parameters. Extending the fit to the paced blocks would be more stable but would compromise the pacer-accuracy analysis in H4, since the model would then be fitted to predict the very signal it is tested against.
-3. **The rate range is narrow.** Phase 2 spans 3 to 5 s. Claims about rate dependence rest largely on Phase 3, where rates are sampled unevenly around each participant's own threshold.
+3. **The rate range is narrow.** Block 3 spans 3 to 5 s. Claims about rate dependence rest largely on Block 4, where rates are sampled unevenly around each participant's own threshold.
 4. **Condition onset is computed, not measured.** The event code marking it was removed from the software to protect pacer timing. It is reconstructed as trial start plus two baseline breaths, and therefore inherits any jitter in the trial-start code.
 5. **Alignment absorbs browser clock wander.** The linear drift correction removes roughly 380 ms of divergence across a session. Analysis of the accelerometer timestamps shows a comparable amount of slow wander in the browser clock, so the correction is largely absorbing browser timing rather than acquisition-hardware error.

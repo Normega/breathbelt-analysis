@@ -37,9 +37,37 @@
 # The two encodings do not overlap, which is what lets two simultaneously
 # running participants share one recording and still be separated.
 
-RIG_SHIFT <- c(Biopac_Right = 1L, Biopac_Left = 16L)
-EVENT_CODES <- c(1:10, 12:13)          # 11 is never emitted
-TRIGGER_IDLE_DEFAULT <- 240L           # 0xF0; a hardware pull-up, not an encoding
+# VERIFIED against the AcqKnowledge template and a real recording (2026-07-31).
+#
+# The trigger reaches the MP160 as EIGHT SEPARATE PHYSICAL LINES, "Digital (STP
+# Input 0..7)", which AcqKnowledge also sums into a derived "Experiment Triggers"
+# channel. The two rigs therefore do not merely use non-overlapping NUMBERS, they
+# use non-overlapping WIRES:
+#
+#   Biopac_Right  shift 1    codes 1..13 land in the LOW  nibble, bits 0-3
+#   Biopac_Left   shift 16   codes 1..13 land in the HIGH nibble, bits 4-7
+#
+# Every event code fits in 4 bits (max 13), which is what makes the split work.
+# Two participants running simultaneously can share one recording and never
+# collide, because neither can touch the other's wires.
+#
+# CONSEQUENCE FOR DECODING: an idle nibble floats HIGH. On a right-rig recording
+# the untouched high nibble reads 0xF0, so "Experiment Triggers" idles at 240 and
+# a trial start (code 10) appears as 250, not 10. Confirmed on 14542: the channel
+# takes values 240 plus 0..13, and the per-line counts match codes 10 and 12
+# exactly (STP3 highest, since bit 3 is set by both).
+#
+# So the code is a NIBBLE MASK, never value/shift and never value minus a global
+# idle. Subtracting an idle would also break on the dual-occupancy files, where
+# BOTH nibbles carry live codes at once and there is no single idle level.
+
+RIG_NIBBLE  <- c(Biopac_Right = "low", Biopac_Left = "high")
+RIG_SHIFT   <- c(Biopac_Right = 1L,    Biopac_Left = 16L)
+EVENT_CODES <- 1:13
+# Code 11 (condition onset) is never emitted during a session. It appears ONLY in
+# sendTestCascade, the setup verification sweep that fires all 13 codes before
+# session start, and which drop_pre_session() removes.
+SESSION_CODES <- c(1:10, 12:13)
 
 
 # ── ACQ filename parsing ──────────────────────────────────────────────────────
@@ -126,34 +154,34 @@ resolve_participant <- function(pid, seat_map) {
 
 # ── Rig identification from the recorded codes ────────────────────────────────
 
-# Infer the rig from the trigger values actually present, using the orthogonality
-# of the two code sets. Returns "Biopac_Right", "Biopac_Left", or NA if the
-# evidence does not clearly favour one.
-#
-# `values` is the set of distinct non-idle plateau values on the trigger channel.
-rig_from_trigger_codes <- function(values, idle = TRIGGER_IDLE_DEFAULT) {
-  v <- unique(values[is.finite(values)])
-  v <- v[v != idle & v != 0]
-  if (!length(v)) return(NA_character_)
-
-  fits <- vapply(names(RIG_SHIFT), function(rig) {
-    s <- RIG_SHIFT[[rig]]
-    mean(v %in% (EVENT_CODES * s))
-  }, numeric(1))
-
-  best <- names(fits)[which.max(fits)]
-  # Demand a clean win: the right rig's 1..13 is not a subset of the left rig's
-  # multiples of 16, so a genuine recording should score near 1 on exactly one.
-  if (max(fits) < 0.9 || sum(fits >= 0.9) != 1L) return(NA_character_)
-  best
+# Split a raw trigger channel into its two nibbles.
+.nibbles <- function(trig) {
+  v <- as.integer(round(trig[is.finite(trig)]))
+  list(low  = bitwAnd(v, 15L),
+       high = bitwShiftR(bitwAnd(v, 240L), 4L))
 }
 
-# Detect the idle level as the modal value of the trigger channel. The handoff
-# records 240 for 14542, but 14542 is a right-rig participant and idle is a
-# hardware property, so it is measured per file rather than assumed.
-detect_trigger_idle <- function(trig) {
-  tb <- table(trig[is.finite(trig)])
-  as.integer(names(tb)[which.max(tb)])
+# Infer which rig(s) actually wrote to this recording, by asking which nibble
+# CARRIES INFORMATION. An idle nibble is constant (all-high or all-low); a live
+# one varies and takes values that are valid event codes.
+#
+# Returns a character vector, possibly of length 2 for a dual-occupancy file.
+rigs_present <- function(trig) {
+  nb  <- .nibbles(trig)
+  out <- character(0)
+  for (rig in names(RIG_NIBBLE)) {
+    v <- nb[[RIG_NIBBLE[[rig]]]]
+    u <- unique(v)
+    u <- u[u != 0L & u != 15L]          # 0 = idle low, 15 = idle floating high
+    if (length(u) >= 3L && mean(u %in% EVENT_CODES) >= 0.9) out <- c(out, rig)
+  }
+  out
+}
+
+# Back-compatible single answer: NA when the evidence does not pick exactly one.
+rig_from_trigger_codes <- function(trig) {
+  r <- rigs_present(trig)
+  if (length(r) == 1L) r else NA_character_
 }
 
 
@@ -206,26 +234,35 @@ reconcile_session <- function(pid, seat_map, trigger_device = NA_character_,
   )
 }
 
-# Decode a raw trigger channel into an event table, undoing the rig's encoding.
-# Returns sample index, time, and the DECODED event code (1..13).
-decode_triggers <- function(trig, hz, shift, idle = NULL) {
-  if (is.null(idle)) idle <- detect_trigger_idle(trig)
-  active <- is.finite(trig) & trig != idle & trig != 0
-  if (!any(active)) {
-    stop("No non-idle samples on the trigger channel (idle detected as ", idle, ").")
+# Decode a raw trigger channel into an event table for ONE rig, by masking that
+# rig's nibble. The other rig's lines are ignored entirely, whether they are idle
+# or carrying another participant's session.
+#
+# Returns the leading edge of each code plateau, so a held pulse counts once.
+decode_triggers <- function(trig, hz, rig) {
+  if (!rig %in% names(RIG_NIBBLE)) {
+    stop("Unknown rig '", rig, "'. Expected one of: ",
+         paste(names(RIG_NIBBLE), collapse = ", "))
   }
-  # Leading edge of each plateau, so a held pulse counts once.
+  v    <- as.integer(round(trig))
+  code <- if (RIG_NIBBLE[[rig]] == "low") bitwAnd(v, 15L)
+          else bitwShiftR(bitwAnd(v, 240L), 4L)
+
+  # 0 and 15 are the two idle states of a nibble (driven low, or floating high).
+  active <- code != 0L & code != 15L & !is.na(code)
+  if (!any(active)) {
+    stop("No event codes on the ", RIG_NIBBLE[[rig]], " nibble for rig ", rig,
+         ". Either the wrong rig was supplied or no triggers reached the MP160.")
+  }
   onset <- which(active & c(TRUE, !active[-length(active)]))
-  raw   <- trig[onset]
-  code  <- raw / shift
   data.frame(
     sample_idx = onset,
     time_sec   = (onset - 1L) / hz,
-    raw_value  = raw,
-    code       = ifelse(abs(code - round(code)) < 1e-9, as.integer(round(code)), NA_integer_),
+    code       = code[onset],
     stringsAsFactors = FALSE
   )
 }
+
 
 # Drop everything before the session-start code (1), which removes the setup
 # verification cascade. This replaces the fragile 100 s cutoff in the old script.
