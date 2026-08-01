@@ -240,15 +240,16 @@ prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
     add_flag(if (quiet) "low calibration fit (value withheld; see the extraction report)"
              else fit$calib_flag)
   }
-  if (fit$calib_lag_ms < 0 || fit$calib_lag_ms > 1000) {
-    add_flag(if (quiet) "belt-to-pacer offset outside the expected range (see B12)"
-             else sprintf("belt-to-pacer offset %.0f ms outside the expected 0 to 1000 ms range",
-                          fit$calib_lag_ms))
+  # Negative offsets are EXPECTED (participant anticipation). Flag only
+  # implausible magnitudes, in either direction.
+  if (abs(fit$belt_offset_ms) > 1000) {
+    add_flag(if (quiet) "belt-to-pacer offset implausibly large (see B12)"
+             else sprintf("belt-to-pacer offset %.0f ms exceeds 1000 ms", fit$belt_offset_ms))
   }
   if (quiet) .msg("calibration fitted (%s)", fit$calib_model_label)
   else .msg("model=%s r=%.3f (lag-corrected %.3f) lag=%.0f ms margin=%.3f",
             fit$calib_model_label, fit$mlr_r_calib, fit$mlr_r_calib_lagcorr,
-            fit$calib_lag_ms, fit$model_margin)
+            fit$belt_offset_ms, fit$model_margin)
 
   applied <- apply_calibration(grid$x, grid$y, grid$z, fit, RESP_HZ)
   grid$x_bp <- applied$x_bp; grid$y_bp <- applied$y_bp; grid$z_bp <- applied$z_bp
@@ -289,7 +290,7 @@ prep_one <- function(pid, seat_map, belt_sessions, belt_trials, paths,
       # Fields the extraction script requires. It hard-fails without them.
       calib_target      = fit$calib_target,
       calib_model_label = fit$calib_model_label,
-      calib_lag_ms      = fit$calib_lag_ms,
+      belt_offset_ms    = fit$belt_offset_ms,
       mlr_r_calib       = fit$mlr_r_calib,
       # Additions, see docs/discrepancies.md C5 and C6.
       mlr_r_calib_lagcorr = fit$mlr_r_calib_lagcorr,

@@ -143,8 +143,10 @@ participant's on-screen preview.
 - Calibration weights fitted against the **reconstructed pacer** on the Block 1
   window only, never against the BioPac signal. The BioPac-target fit is retained
   as a sensitivity analysis and labelled an upper bound
-- Device lag searched over plus or minus 2000 ms. Flag negative lag or lag above
-  1000 ms
+- **Belt-to-pacer offset** searched over plus or minus 2000 ms. NOT device lag:
+  it also contains participant anticipation of the pacer, which is negative, so
+  negative values are expected rather than anomalous. Flag only beyond plus or
+  minus 1000 ms. Decomposed per breath in prereg Section 5.1
 - Lag correction applied uniformly. The software computes some trial-level
   agreement measures with correction and others without; recompute everything
   consistently

@@ -512,11 +512,46 @@ and the preregistered flag will fire for essentially everyone.
 True device lag would need a belt-versus-BioPac comparison, which is blocked
 during the pilot, or a known mechanical input.
 
-**Action.** Either rename this quantity to something honest such as
-"belt-to-pacer offset" and drop the positivity expectation, or move the device
-lag sanity check to a belt-versus-BioPac estimate computed after the
-pre-registration is locked. Needs Norm's decision; the current check is not
-measuring what Section 5.1 says it measures.
+**RESOLVED 2026-07-31, Norm.** Renamed to **belt-to-pacer offset** throughout the
+pre-registration, `CONTEXT.md`, and the code. The positivity expectation is
+dropped: negative values are expected, and only magnitudes beyond plus or minus
+1000 ms are flagged. True device lag is stated to be unidentifiable from this
+quantity, since it needs a between-device comparison.
+
+Naming note. The extraction output field is `belt_offset_ms`, NOT
+`belt_pacer_offset_ms`, because `BLOCKED_PATTERNS` contains `"r_"` and
+`pace`**`r_`**`offset` would match it. The guard would then abort on a legitimate
+whitelisted quantity, and the obvious "fix" would be to weaken the guard. Naming
+around it leaves the guard intact.
+
+**Superseded by a model, not just a rename.** Section 5.1 now preregisters a
+per-breath decomposition of the offset rather than one number per participant:
+
+```
+offset ~ 1 + breath_index + rig
+         + (1 + breath_index | participant)
+         + (1 | participant:trial)
+```
+
+The decisive advantage is the anchor. The Block 1 estimate inherits roughly plus
+or minus 88 ms of pacer-anchor uncertainty, which is constant within a
+participant and therefore **exactly confounded** with the participant term it is
+meant to estimate. Trial pacers are anchored to a hardware trigger timestamped at
+2000 Hz, so that error disappears.
+
+The `breath_index` slope estimates the B11 pacer overshoot directly, as a fitted
+parameter rather than one derived from trial durations. Its participant random
+slope is a preregistered check on the mechanism: overshoot is software-determined
+(83 to 86 ms per breath across all 18), so a materially non-zero random slope
+would mean B11 has been misunderstood.
+
+**The fixed intercept is BLOCKED**: it is a mean signed error relative to the
+pacer, close enough to H4's estimand to count as an effect. Only variance
+components and the two timing slopes are extracted. Only the accelerometer is
+decomposed; a parallel decomposition for the stretch belt, and any comparison of
+transduction terms between devices, is H4 test 2.
+
+Depends on Task 2, since it needs breath-onset detection and uses H2's detector.
 
 ### B13. Trial-count mismatches in three of six participants checked
 

@@ -173,9 +173,11 @@ CALIB_PACED_MS     <- CALIB_N_CYCLES * CALIB_PERIOD_MS   # 16000 NOMINAL only;
 #
 # Residual anchor error is not separable from true device lag using the
 # calibration block alone: both shift the pacer against the accelerometer. The
-# lag search absorbs it, which means `calib_lag_ms` carries roughly +/- 88 ms of
-# anchor uncertainty on top of genuine transduction delay. Recorded as a
-# limitation rather than silently ignored.
+# offset search absorbs it, which means the Block 1 `belt_offset_ms` carries
+# roughly +/- 88 ms of anchor uncertainty on top of any genuine delay. This is
+# precisely why the per-breath decomposition in prereg Section 5.1 uses TRIAL
+# pacers instead: each trial is anchored to a hardware trigger timestamped at
+# 2000 Hz, so the anchor error disappears.
 # Locate the LAST calibration attempt.
 #
 # Participants may redo calibration from CalibReviewPanel, which returns to

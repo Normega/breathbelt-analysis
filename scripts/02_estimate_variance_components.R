@@ -46,7 +46,7 @@ for (thispack in packages) {
 #   between-participant SD of each breathing-variability measure
 #   distribution of Phase 3 trial counts
 #   distribution of calibration fit
-#   distribution of device lag
+#   distribution of the belt-to-pacer offset
 #   distribution of breath counts
 #   frequency of each selected calibration model
 #   alignment residual spread
@@ -65,7 +65,7 @@ for (thispack in packages) {
 #   any per-participant value or identifier
 #
 # Rationale for two non-obvious calls:
-#   Calibration fit and device lag are EXTRACTED. Neither enters a decision rule;
+#   Calibration fit and the belt-to-pacer offset are EXTRACTED. Neither enters a decision rule;
 #   both are preprocessing parameters the simulation needs, and the lag
 #   distribution is separately required for the preregistered sanity check.
 #   Selected-model FREQUENCY is extracted; any agreement quantity split by model
@@ -80,7 +80,10 @@ WHITELIST <- c(
   "phase3_trial_count",
   "breath_count",
   "calibration_fit",
-  "device_lag_ms",
+  # Belt-to-pacer offset. NOT named *_pacer_* : BLOCKED_PATTERNS contains "r_",
+  # which "pacer_offset" would match, and the wrong fix would be to weaken the
+  # guard. See prereg Section 5.1.
+  "belt_offset_ms",
   "selected_model_freq",
   "alignment_residual_sd_ms",
   "provenance"
@@ -294,7 +297,7 @@ REQUIRED_CALIB_TARGET <- "pacer"
     var_sd_ms       = wmean(function(b) unname(b$var_belt["sd_ms"])),
     n_phase3        = n_phase3,
     calib_fit       = .safe_num(d$belt$mlr_r_calib),
-    lag_ms          = .safe_num(d$belt$calib_lag_ms),
+    lag_ms          = .safe_num(d$belt$belt_offset_ms),
     selected_model  = if (!is.null(d$belt$calib_model_label))
                         as.character(d$belt$calib_model_label) else NA_character_,
     align_resid_sd  = .safe_num(d$alignment$residual_sd_ms)
@@ -351,7 +354,7 @@ out <- list(
   phase3_trial_count       = .dist(pull("n_phase3")),
   breath_count             = .dist(pull("n_breaths")),
   calibration_fit          = .dist(pull("calib_fit")),
-  device_lag_ms            = .dist(pull("lag_ms")),
+  belt_offset_ms           = .dist(pull("lag_ms")),
   alignment_residual_sd_ms = .dist(pull("align_resid_sd")),
 
   selected_model_freq = table(vapply(recs, function(r) {
@@ -414,7 +417,7 @@ cat("Variability measures, between-participant SD:\n")
 print(round(out$variability_between_sd, 4))
 cat("\nDistributions:\n")
 for (nm in c("duration_diff_within_sd_ms", "phase3_trial_count", "breath_count",
-             "calibration_fit", "device_lag_ms", "alignment_residual_sd_ms")) {
+             "calibration_fit", "belt_offset_ms", "alignment_residual_sd_ms")) {
   cat("\n", nm, "\n", sep = "")
   print(round(out[[nm]], 3))
 }

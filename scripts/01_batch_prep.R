@@ -58,8 +58,10 @@ results <- lapply(ids, function(pid) {
   tryCatch(
     { r <- prep_one(pid, seat_map, belt_sessions, belt_trials, PATHS,
                     quiet = length(ids) > 1L)
-      list(pid = pid, ok = TRUE, flags = r$flags,
-           model = r$belt$calib_model_label, lag = r$belt$calib_lag_ms) },
+      # Deliberately keeps no calibration values. They are whitelisted, but the
+      # extraction script reports their distribution; a batch driver has no
+      # reason to accumulate eighteen individual figures.
+      list(pid = pid, ok = TRUE, flags = r$flags) },
     error = function(e) {
       message("[", pid, "] FAILED: ", conditionMessage(e))
       list(pid = pid, ok = FALSE, flags = conditionMessage(e))
@@ -68,7 +70,7 @@ results <- lapply(ids, function(pid) {
 
 # Report ---------
 # Deliberately reports only provenance and quality flags. Calibration fit and
-# device lag are whitelisted nuisance parameters, but their DISTRIBUTION is
+# the belt-to-pacer offset are whitelisted nuisance parameters, but their DISTRIBUTION is
 # reported by the extraction script, not here, so nothing per-participant is
 # printed beyond what is needed to see that a run succeeded.
 ok <- vapply(results, `[[`, logical(1), "ok")

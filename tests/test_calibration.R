@@ -116,7 +116,7 @@ calib  <- data.frame(
 
 fit <- fit_calibration(calib, ANCHOR, PERIOD, HZ, target = "pacer", pid = "synthetic")
 cat(sprintf("     winner=%s  r=%.3f  lag=%.0f ms\n",
-            fit$calib_model_label, fit$mlr_r_calib, fit$calib_lag_ms))
+            fit$calib_model_label, fit$mlr_r_calib, fit$belt_offset_ms))
 # The achievable r is CAPPED BY THE LAG: correlating a sinusoid with itself
 # delayed by L on a period P cannot exceed cos(2*pi*L/P), here 0.876. Testing
 # against a flat 0.9 would fail a correct implementation.
@@ -130,9 +130,9 @@ ok("lag-corrected r is high, confirming the model itself is good",
 ok("lag-corrected r exceeds uncorrected, as it must",
    fit$mlr_r_calib_lagcorr > fit$mlr_r_calib)
 ok("fit r is SIGNED and positive, not an absolute value", fit$mlr_r_calib > 0)
-ok("recovers the injected lag within one sample (40 ms)",
-   abs(fit$calib_lag_ms - LAG_MS) <= 40,
-   sprintf("got %.0f, expected %d", fit$calib_lag_ms, LAG_MS))
+ok("recovers the injected belt-to-pacer offset within one sample (40 ms)",
+   abs(fit$belt_offset_ms - LAG_MS) <= 40,
+   sprintf("got %.0f, expected %d", fit$belt_offset_ms, LAG_MS))
 # NOT the weight direction. When the three axes are scaled copies of one signal
 # they are collinear, so many weight vectors reconstruct the breathing equally
 # well and the weights are not identified. What must be recovered is the
@@ -154,7 +154,7 @@ ok("reports the runner-up margin so EH3 can tell a real winner from a tie",
    is.finite(fit$model_margin),
    sprintf("margin = %.4f", fit$model_margin))
 ok("carries every field the extraction script requires",
-   all(c("calib_target", "calib_model_label", "mlr_r_calib", "calib_lag_ms")
+   all(c("calib_target", "calib_model_label", "mlr_r_calib", "belt_offset_ms")
        %in% names(fit)))
 ok("calib_target is 'pacer'", identical(fit$calib_target, "pacer"))
 

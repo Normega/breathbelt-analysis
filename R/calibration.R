@@ -162,11 +162,17 @@ lp_filter <- function(x, cutoff = CALIB_LP_HZ, hz, order = CALIB_ORDER) {
 
 # ── Lag ───────────────────────────────────────────────────────────────────────
 
-# Cross-correlation lag of the reconstruction against the pacer, searched over
-# plus or minus max_lag_ms. Positive means the belt LAGS the pacer.
+# BELT-TO-PACER OFFSET by cross-correlation, searched over plus or minus
+# max_lag_ms. Positive means the belt trails the pacer.
+#
+# Deliberately not called device lag. It also contains participant anticipation,
+# which is negative and is the norm in sensorimotor synchronisation, so negative
+# values are expected. True device lag needs a between-device comparison and is
+# reserved for the confirmatory analysis. See prereg Section 5.1.
 #
 # The software's estimateLagMs searches `for (shift = 0; shift <= maxShift)`,
-# i.e. non-negative shifts only, up to +1500 ms. Its calib_lag_ms is therefore
+# i.e. non-negative shifts only, up to +1500 ms. The live `belt_sessions.calib_lag_ms`
+# column (that name is the database's, not ours) is therefore
 # non-negative BY CONSTRUCTION, which makes the pre-registered sanity check
 # "flag any participant whose estimated lag is negative" vacuous on the live
 # values. The symmetric search here is what gives that check meaning.
@@ -295,8 +301,8 @@ fit_calibration <- function(calib, anchor_ms, period_ms, hz,
     calib_flag        = calib_flag,             # NA when the fit is acceptable
     calib_model_label = win_label,              # required
     mlr_r_calib       = unname(win$r),          # required; SIGNED, not abs
-    calib_lag_ms      = lag$lag_ms,             # required; symmetric search
-    calib_lag_r       = lag$lag_r,
+    belt_offset_ms    = lag$lag_ms,             # required; symmetric search
+    belt_offset_r     = lag$lag_r,
 
     # mlr_r_calib is MECHANICALLY CONFOUNDED WITH LAG. A perfect model still
     # scores only cos(2*pi*lag/period) against an unshifted pacer: 0.88 at a
@@ -306,7 +312,7 @@ fit_calibration <- function(calib, anchor_ms, period_ms, hz,
     #
     # Both are reported: the uncorrected value stays comparable to the live gate
     # participants were held to, the corrected value is the actual model quality.
-    # They matter separately because calibration_fit and device_lag_ms are BOTH
+    # They matter separately because calibration_fit and belt_offset_ms are BOTH
     # whitelisted inputs to the simulation, and treating them as independent
     # would double-count a single underlying quantity.
     mlr_r_calib_lagcorr = unname(lag$lag_r),

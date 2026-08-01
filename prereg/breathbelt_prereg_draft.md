@@ -176,7 +176,7 @@ Nuisance parameters. None appears in any decision rule in Section 5.
 - Distribution of Block 4 trial counts
 - Distribution of breath counts
 - Distribution of calibration fit
-- Distribution of estimated device lag
+- Distribution of the estimated belt-to-pacer offset
 - Distribution of alignment residuals
 - Frequency with which each of the six calibration models is selected
 
@@ -198,7 +198,7 @@ Each is an effect entering a confirmatory decision rule. None is computed, or is
 | Any agreement quantity split by selected calibration model | EH3 |
 | Any per-participant value or identifier | All |
 
-Two calls warrant note. Calibration fit and device lag are extracted: neither enters a decision rule, both are preprocessing parameters the simulation needs, and the lag distribution is separately required for the sanity check in Section 5.1. Conversely, the proportion of breaths matched between devices is blocked despite being useful, because it is the recall component of H2's test statistic; H2's expected match rate is instead set from a stated smallest effect of interest.
+Two calls warrant note. Calibration fit and the belt-to-pacer offset are extracted: neither enters a decision rule, both are preprocessing parameters the simulation needs, and the offset distribution is separately required for the check in Section 5.1. Conversely, the proportion of breaths matched between devices is blocked despite being useful, because it is the recall component of H2's test statistic; H2's expected match rate is instead set from a stated smallest effect of interest.
 
 ### Sequence
 
@@ -347,7 +347,7 @@ Definitions for every term used in Section 3, with its source.
 | **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three band-passed acceleration axes, fitted on the Block 1 calibration window only. Refitted offline; the weights computed live in the software are used only for the participant's on-screen preview. | Fitted from Block 1, approximately 3,900 samples | Defined |
 | **Pacer signal** | Sine wave at the commanded period, anchored to the recorded block or trial onset. Reconstructed analytically. The recorded pacer column is empty in the data files and is not used. | Software trial records | Defined |
 | **Common time base** | Both signals resampled to a uniform 25 Hz grid. Accelerometer sample times are reconstructed by back-assigning from each packet timestamp at 4.916 ms intervals, the empirically measured sample period. | Preprocessing | Defined |
-| **Device lag** | Time offset between the two signals, estimated by shifting one against the other until agreement peaks. Searched over plus or minus 2000 ms. | Preprocessing | Defined |
+| **Belt-to-pacer offset** | Time offset between a device's breathing signal and the reconstructed pacer, estimated by shifting one against the other until correlation peaks. Searched over plus or minus 2000 ms. Deliberately **not** called device lag: it is not a pure transduction delay. See Section 5.1. | Preprocessing | Defined |
 
 ## 4.2 Breath-level measures
 
@@ -428,9 +428,9 @@ Fixed in advance and applied identically to every participant.
 
    This differs from the live software, which applies 2nd-order biquad sections under the same forwards-and-backwards scheme and is therefore effectively 4th order. The offline specification above is authoritative; the live filters exist only to drive the participant's on-screen preview.
 
-   **Edge handling.** Every zero-phase filter pass is preceded by odd-reflection padding of 15 seconds at each end, and the padding is discarded afterwards. This is not cosmetic. The calibration window is 16 s while the 0.05 Hz high-pass corner has a 20 s period, so an unpadded filter spends the entire window settling: in synthetic testing an unpadded pass recovered an injected 320 ms device lag as 160 ms and failed to recover the breathing direction at all. The live software pads for the same reason. `signal::filtfilt` in R does not pad by default, so the padding is applied explicitly.
+   **Edge handling.** Every zero-phase filter pass is preceded by odd-reflection padding of 15 seconds at each end, and the padding is discarded afterwards. This is not cosmetic. The calibration window is 16 s while the 0.05 Hz high-pass corner has a 20 s period, so an unpadded filter spends the entire window settling: in synthetic testing an unpadded pass recovered an injected 320 ms offset as 160 ms and failed to recover the breathing direction at all. The live software pads for the same reason. `signal::filtfilt` in R does not pad by default, so the padding is applied explicitly.
 5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Block 1 window only. Apply to the whole session, then low-pass at 0.6 Hz.
-6. **Correct for lag.** Estimate device lag by cross-correlation over plus or minus 2000 ms, per participant, on the Block 1 window. Apply the same lag throughout the session.
+6. **Correct for the belt-to-pacer offset.** Estimate it by cross-correlation over plus or minus 2000 ms, per participant, on the Block 1 window. Apply the same value throughout the session.
 7. **Detect breath onsets.** Independently in each device's signal, using the same trough-detection rule.
 8. **Compute the signal quality index** in rolling 15 s windows.
 
@@ -438,7 +438,58 @@ Fixed in advance and applied identically to every participant.
 
 **Lag applied consistently.** The software computes some trial-level agreement measures with lag correction and others without. All measures are recomputed offline with lag correction applied uniformly, so that no comparison contrasts a corrected quantity against an uncorrected one.
 
-**Lag sanity check.** Device lag reflects signal transduction and processing, so it should be positive and of the order of a few hundred milliseconds. Any participant whose estimated lag is negative, or exceeds 1000 ms, is flagged and inspected before analysis. The distribution of lags across participants is reported.
+**What the offset is, and is not.** This quantity was previously called device lag, on the reasoning that it reflects signal transduction and processing and should therefore be positive. That reasoning is wrong and the name has been changed.
+
+The offset is measured between a device's breathing signal and the pacer, so it contains at least three components:
+
+- device transduction and filter delay, positive
+- **participant anticipation of the pacer, negative.** Anticipating a predictable rhythmic cue is the standard finding in sensorimotor synchronisation, where negative mean asynchrony of tens to a couple of hundred milliseconds is typical rather than exceptional
+- residual error in the reconstructed pacer anchor, either sign
+
+A negative value is therefore an expected result, not an anomaly. No positivity expectation is preregistered. Offsets are reported as a distribution, and values beyond plus or minus 1000 ms are flagged for inspection as implausible in either direction.
+
+True device lag is not identifiable from this quantity. It would require a between-device comparison, which is reserved for the confirmatory analysis.
+
+### Decomposing the belt-to-pacer offset
+
+The offset is modelled rather than treated as a single per-participant number, because its sources differ in how they vary and only some of them are nuisance.
+
+**Unit.** Individual paced breath, in Blocks 3 and 4, i.e. four breaths per trial across roughly 34 trials. Approximately 136 per participant, and about 2,400 across the pilot sample. Free-breathing blocks are excluded because they have no pacer.
+
+**Why per breath rather than per participant.** The Block 1 estimate inherits the uncertainty in the reconstructed pacer anchor, roughly plus or minus 88 ms of packet quantisation, and that error is constant within a participant. It is therefore exactly confounded with the participant-level term and inflates the between-participant variance. Trial pacers do not have this problem: each trial is anchored to a **hardware trigger timestamped at 2000 Hz**, so the pacer onset is known to well under a millisecond.
+
+**Definitions.** `offset` is the signed difference between a detected breath onset and the corresponding commanded pacer onset, positive when the breath trails the pacer.
+
+`breath_index` is the breath's position **within its own trial**, 1 to 4, not a running count across the session. This matters: every trial is re-anchored to its own hardware trigger, so pacer overshoot accumulates within a trial and resets at the next one. A cumulative index would model a session-long drift that does not exist and would absorb the overshoot into the wrong term.
+
+`rig` is a two-level factor, left or right testing computer, taken from the recorded trigger codes rather than from the session record.
+
+**Model.**
+
+```
+offset ~ 1 + breath_index + rig
+         + (1 + breath_index | participant)
+         + (1 | participant:trial)
+```
+
+| Term | Interprets as | Status |
+|---|---|---|
+| intercept | display and transduction latency | **blocked**, see below |
+| `breath_index` | per-breath pacer overshoot | extracted |
+| `rig` | per-computer display latency | extracted |
+| participant intercept | individual anticipation or rushing | extracted, as a variance |
+| participant slope | whether overshoot differs by person | extracted, as a variance |
+| `participant:trial` | trial-to-trial variation | extracted, as a variance |
+
+**Disclosure.** Only the variance components, the `breath_index` slope, and the `rig` contrast are extracted. **The fixed intercept is blocked**: it is a mean signed error relative to the pacer, which is close enough to H4's estimand that it is treated as an effect rather than a nuisance. The variances and slopes carry everything the power simulation needs without it.
+
+Only the accelerometer's offset is decomposed. A parallel decomposition for the stretch belt, and any comparison of transduction terms between the two devices, is H4's between-device test and is not computed before the confirmatory analysis.
+
+**Expected structure, stated in advance.** The `breath_index` slope should be positive and close to constant across participants, because the pacer overshoot arises from software timing rather than from the participant: it measures 83 to 86 ms per breath across the pilot sample. A materially non-zero participant random slope would indicate that this mechanism has been misunderstood, and is preregistered as a check on it. The participant intercept variance is expected to dominate.
+
+**Precision.** The `rig` term is weakly estimated: only two participants ran on the left computer. It is reported with its interval and not relied upon.
+
+**Dependency.** This model requires breath-onset detection, so it follows the onset detector specified for H2 and uses that same detector.
 
 **Filter authority.** The offline parameters above are authoritative. They differ from the settings used in the live software, which exist only to drive the participant's on-screen preview.
 
