@@ -30,9 +30,37 @@
 # exist only to drive the participant's on-screen preview.
 #
 #   wide  0.05 to 1.0 Hz   pre-registration Section 5.1 (software uses 0.1 to 1.0)
-#   tight 0.10 to 0.4 Hz   software only; the pre-registration does not specify a
-#                          narrow band offline, so the software value is adopted
 #   lp    0.6 Hz           post-smoothing for the -lp variants
+#
+# THE TIGHT BAND (0.10 to 0.4 Hz) WAS DROPPED, 2026-08-07, approved by Norm.
+#
+# It is respkit Defect 3 sitting inside the calibration step: a 0.4 Hz cutoff
+# sits barely above the respiratory fundamental, so it symmetrises every breath
+# and biases extremum timing. Measured consequence on participant 14542, whose
+# winning model was mlr-tight-lp: median duty cycle read 0.48 to 0.55 in every
+# block, i.e. pinned at 0.50 regardless of true morphology, while the stretch
+# belt on the same breaths read 0.43 to 0.47. A reconstruction that cannot
+# express asymmetry cannot support H2's onset timing, H3's depth-by-rate
+# interaction, or EH2's waveform shape.
+#
+# Dropping it also makes the reconstruction band consistent with the detector's
+# measurement band (R/onsets.R, 0.05 to 2.0 Hz) and makes participants
+# comparable: under the old rule a tight-band participant and a wide-band
+# participant were not running the same measurement.
+#
+# Consequences, all intended:
+#   - the candidate set falls from six models to three (mlr-wide, mlr-wide-lp,
+#     pca-wide), which docs/discrepancies.md C6 argues is no loss, since under
+#     collinear axes the six scored within noise of each other and selection was
+#     close to a coin flip
+#   - EH3 is correspondingly narrower; see prereg Section 5.11
+#   - mlr-wide and mlr-wide-lp share IDENTICAL weights and differ only in
+#     whether the 0.6 Hz smooth is applied before scoring, so the fitted weights
+#     no longer depend on which of the two wins
+#
+# The constant is kept below rather than deleted so the dropped band stays on
+# the record.
+CALIB_BAND_DROPPED_TIGHT <- c(low = 0.10, high = 0.4)
 #
 # Order 4 in butter() plus filtfilt gives an effective 8th-order zero-phase
 # response. The software uses 2nd-order biquads under filtfilt, i.e. effective
@@ -41,8 +69,7 @@
 # Order 4 is used here to match the existing offline pipeline. Flagged for Norm.
 
 CALIB_BANDS <- list(
-  wide  = c(low = 0.05, high = 1.0),
-  tight = c(low = 0.10, high = 0.4)
+  wide  = c(low = 0.05, high = 1.0)
 )
 CALIB_LP_HZ    <- 0.6
 CALIB_ORDER    <- 4L

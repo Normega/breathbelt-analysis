@@ -159,14 +159,28 @@ ok("carries every field the extraction script requires",
 ok("calib_target is 'pacer'", identical(fit$calib_target, "pacer"))
 
 # ── 5. The PCA branch, which the live software can never reach ───────────────
+#
+# The candidate set is THREE models since 2026-08-07, not six. The tight band
+# (0.10 to 0.4 Hz) was dropped because it symmetrises the waveform, which is
+# respkit Defect 3; see the header of R/calibration.R. What this section still
+# guards is the thing that made the branch worth testing: the live software
+# passes the same column three times to solveLS3, so its design matrix is
+# singular and pca-* can never be selected there, while R/calibration.R
+# evaluates it correctly and it CAN win here.
 cat("\n5. PCA branch\n")
-ok("all six models are evaluated, not four", length(fit$all_model_r) == 6L,
+ok("exactly three models are evaluated (tight band dropped)",
+   length(fit$all_model_r) == 3L,
    sprintf("got %d: %s", length(fit$all_model_r),
            paste(names(fit$all_model_r), collapse = ", ")))
-ok("pca-wide and pca-tight both produce a finite fit",
-   all(is.finite(fit$all_model_r[c("pca-wide", "pca-tight")])))
+ok("the set is exactly mlr-wide, mlr-wide-lp, pca-wide",
+   setequal(names(fit$all_model_r), c("mlr-wide", "mlr-wide-lp", "pca-wide")),
+   paste(names(fit$all_model_r), collapse = ", "))
+ok("no tight-band variant survives anywhere in the candidate set",
+   !any(grepl("tight", names(fit$all_model_r))))
+ok("pca-wide produces a finite fit (the live software's branch is singular)",
+   is.finite(fit$all_model_r[["pca-wide"]]))
 ok("PCA polarity is resolved (positive r, not sign-ambiguous)",
-   all(fit$all_model_r[c("pca-wide", "pca-tight")] > 0))
+   fit$all_model_r[["pca-wide"]] > 0)
 
 # ── 6. Symmetric lag search ──────────────────────────────────────────────────
 cat("\n6. Lag search is symmetric\n")
