@@ -137,8 +137,21 @@ Offline settings are authoritative. The live settings exist only to drive the
 participant's on-screen preview.
 
 - Band-pass each acceleration axis 0.05 to 1.0 Hz
-- Combine by calibrated weights, then low-pass at 0.6 Hz
-- 4th-order Butterworth, applied forwards and backwards, zero phase
+- Combine by calibrated weights, then carry **two filtered copies, not one**: a
+  detection copy band-passed 0.05 to 0.6 Hz and a measurement copy band-passed
+  0.05 to 2.0 Hz. Extrema are located on the detection copy and snapped onto the
+  measurement copy before any time or amplitude is read. A single 0.6 Hz copy
+  symmetrises the waveform and pushes extrema late: worst synthetic trough error
+  293 ms at 0.6 Hz against 199 ms at 2.0 Hz. See prereg Section 5.1 step 7
+- 4th-order Butterworth, applied forwards and backwards, zero phase, with
+  15 s odd-reflection padding on every pass
+- **Onset detection lives in `R/onsets.R` and is shared.** The same function with
+  the same parameters runs on both devices and feeds both the internal pilot
+  variance estimation and every confirmatory analysis. Per-device tuning is not
+  permitted: it would inflate exactly the agreement H2 exists to test. Minimum
+  prominence 0.4 normalised, minimum separation 1 s, refined onto the measurement
+  copy within 0.5 s. Detected **once on the continuous session**, then assigned to
+  blocks by time, because a 16 s trial cannot settle a 0.05 Hz corner
 - Everything on a common 25 Hz grid
 - Calibration weights fitted against the **reconstructed pacer** on the Block 1
   window only, never against the BioPac signal. The BioPac-target fit is retained
@@ -151,17 +164,33 @@ participant's on-screen preview.
   agreement measures with correction and others without; recompute everything
   consistently
 
-Six candidate calibration models are defined in `breathUtils.js` `fitBestModel`
-(`mlr` and `pca`, each on a wide or tight band, `mlr` also with a 0.6 Hz smooth).
-**In the live software only four can ever win**: the PCA branch passes the same
-column three times, so it is always singular and always skipped. See
-`docs/discrepancies.md` B7. `R/calibration.R` evaluates all six correctly, so the
-offline label may differ from `belt_sessions.calib_model_label`. The offline one
-is authoritative for EH3 and `selected_model_freq`.
+**Three candidate calibration models offline, not six.** `breathUtils.js`
+`fitBestModel` defines six (`mlr` and `pca`, each on a wide 0.05 to 1.0 Hz or a
+tight 0.10 to 0.4 Hz band, `mlr` also with a 0.6 Hz smooth). **The three
+tight-band variants are not used offline.** A 0.4 Hz cutoff sits barely above the
+respiratory fundamental, so it symmetrises every breath and biases extremum
+timing. Measured on participant 14542, whose winner under the old rule was the
+tight variant: median duty cycle pinned at 0.48 to 0.55 in every block regardless
+of true morphology, while the stretch belt on the same breaths read 0.43 to 0.47.
+Dropping it also makes participants comparable, since a tight-band participant and
+a wide-band participant were not running the same measurement. See prereg
+Section 5.1 step 5.
 
-Under collinear axes the six often score within noise of each other, so
-`fit_calibration` also returns `model_margin` (winner minus runner-up). EH3 is
-only interpretable where that margin is meaningful. See C6.
+The offline candidate set is therefore `mlr`, `mlr` with a 0.6 Hz smooth, and
+`pca`, all on 0.05 to 1.0 Hz. `R/calibration.R` keeps the dropped band recorded as
+`CALIB_BAND_DROPPED_TIGHT` for the record.
+
+**In the live software only four of its six can ever win**: the PCA branch passes
+the same column three times, so it is always singular and always skipped. See
+`docs/discrepancies.md` B7. The offline label may therefore differ from
+`belt_sessions.calib_model_label`. The offline one is authoritative for EH3 and
+`selected_model_freq`.
+
+Under collinear axes the candidates often score within noise of each other, so
+`fit_calibration` also returns `model_margin` (winner minus runner-up). On the
+internal pilot that margin had a median of 0.013 and 17 of 18 participants
+selected the same model, so the selected label is close to arbitrary. EH3 is only
+interpretable where that margin is meaningful. See C6.
 
 ## Design facts
 

@@ -1,0 +1,86 @@
+respkit: vendored snapshot
+==========================
+
+Source:   I:/Shared drives/TechnicalReference/respkit/
+Version:  0.1.0 (DESCRIPTION)
+Author:   Norman Farb <norman@radlab.zone>
+License:  MIT
+
+Copied:   2026-08-07
+Newest source mtime at copy time: 2026-08-06 15:13:01 (tests/test-respkit.R)
+
+Content fingerprint
+-------------------
+sha256 over the sorted per-file sha256 of R/, inst/, tests/, DESCRIPTION,
+NAMESPACE:
+
+    db5ae3595537ddf9357732dc4133d8817c9917a5388eaea93dc7e671e17e927f
+
+Verified identical between source and this snapshot at copy time. Recompute
+with:
+
+    find R inst tests DESCRIPTION NAMESPACE -type f | sort \
+      | xargs sha256sum | sha256sum
+
+Verification in place
+---------------------
+The full suite was run from THIS directory under R 4.6.0 and passed, so the
+snapshot is self-contained and does not reach back to the source tree:
+
+    Rscript tests/test-respkit.R      -> All tests passed
+
+Why this is vendored
+--------------------
+A pre-registration must not depend on a shared-drive path that can move or
+change underneath it. This mirrors the handling of reference/radlab_snapshot/
+and reference/study5_snapshot/.
+
+READ-ONLY. Do not edit anything in this directory. Fixes belong upstream in
+TechnicalReference/respkit, after which this snapshot is re-copied and the
+fingerprint above is updated.
+
+What this project uses it for
+-----------------------------
+Task 2 of the pre-registration handoff: a single breath-onset detector shared
+by scripts/02_estimate_variance_components.R and the confirmatory analysis, so
+that the extracted variance components describe the same signal the
+confirmatory analysis sees. R/onsets.R is the adapter; it wraps each device's
+25 Hz grid column as a resp_recording and calls one detector with identical
+parameters for both devices.
+
+respkit supersedes the direct port of Study 5's find_extrema_prominence that
+the handoff's Task 2 originally proposed. Three of the defects it documents
+reach this study directly:
+
+  Defect 3   detecting and measuring on one tight band (0.05 to 0.4 Hz)
+             symmetrises every breath and biases peak timing late. The fix is
+             two filtered copies: detect_band, then snap each extremum onto a
+             wider measure_band before measuring. This is why the handoff's
+             proposed "port Study 5 wholesale at 0.4 Hz" was rejected.
+
+  Fifth pass flag_breaths() guarded its duration-outlier test with mad > 0, but
+             durations are differences of floating-point sample times, so on
+             regular breathing the MAD is a residue near 1e-15 rather than
+             zero. About half of all breaths were flagged and duration_cv and
+             duration_rmssd collapsed to ~1e-15. A paced-breathing protocol
+             would have reported zero variability by construction, which would
+             have destroyed H5. Fixed upstream.
+
+  Sixth pass duty cycle carries a bias that grows with breathing rate, so any
+             manipulation that also changes rate produces a duty-cycle change
+             of the same sign for free. H3 manipulates rate by design and EH2
+             predicts an inverted U across rate, so this is preregistered as a
+             covariate rather than discovered later.
+
+Defect 1 (staged decimation silently returning the wrong sampling rate) does
+NOT apply here. R/acq_io.R already factors the decimation exactly and refuses
+non-integer factors; its comment cites Study 5's 25.641 Hz as the failure it
+was written to avoid.
+
+Not used from respkit
+---------------------
+  resp_read_acq / io.R   this project decodes its own triggers, because the
+                         two rigs use a nibble split that respkit has no
+                         concept of. See docs/discrepancies.md B10.
+  sample entropy         respkit does not provide it. H5 preregisters CV and
+                         RMSSD only; see prereg Section 5.7.
