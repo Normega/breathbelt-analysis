@@ -321,6 +321,23 @@ sigma^2_between = max(0, s^2_observed - mean(s^2_within) / k)
 Both terms are whitelisted, so the corrected combination is still a nuisance
 variance. **Approved by Norm 2026-07-31.**
 
+**RESOLVED, and it went further than the correction above.** The method-of-moments
+correction was applied and **hit the boundary**: `max(0, ...)` returned exactly
+zero. Rather than power on a boundary estimate, the script now fits a random
+intercept model by REML (`.between_sd_reml` in
+`scripts/02_estimate_variance_components.R`), which also returned a singular fit,
+so the between-participant variance is genuinely estimated at zero.
+
+Zero is the **most favourable possible value** for an equivalence design, since it
+makes the participant-level mean maximally precise and minimises required N. The
+power analysis therefore uses the **95% profile upper bound of 35.3 ms**, never the
+point estimate. The moment estimate is retained as
+`duration_bias_between_sd_ms_moment` alongside the REML pair for comparison.
+
+The fixed intercept of that model is H1's estimand, so it is destroyed inside the
+fitting function and never returned. See prereg Section 1.7, "Precision this
+affords".
+
 ### C2. H1's matching rule is unspecified
 
 Section 5.3 gives H1's unit as "individual breath, matched between devices" but
@@ -340,18 +357,61 @@ calculation wrong in an unknown direction.
 This is the same class of problem as Task 2's onset-detector reconciliation and
 should be settled with it.
 
+**RESOLVED, 2026-08-07 to 2026-08-12. Rank pairing is gone.** H1's rule is now
+specified in prereg Section 5.3: onsets matched between devices nearest-first and
+greedily, within a **500 ms tolerance**, on lag-corrected onsets, with a breath
+contributing a duration only when **both devices resolve both of its ends**. The
+500 ms window is wider than H2's because the two windows do different jobs, H2's
+being a test parameter and H1's bookkeeping; matching at H2's 150 ms would
+condition H1 on good timing agreement and bias the within-participant SD downward.
+
+The strict both-ends requirement was chosen over the permissive alternative on
+measured evidence: within-participant SD of the difference was **315 ms strict
+against 1460 ms permissive**, on a breath period near 4000 ms, because the
+permissive rule admits detection misses as though they were duration
+disagreements. Its cost is the usable count, roughly 42 matched breaths of about
+196 nominal, which is reported in prereg Section 4.6 rather than hidden.
+
+As C2 anticipated, this was settled together with the detector: `R/onsets.R` now
+holds both `detect_breaths` and `match_onsets`, shared by the extraction script and
+every confirmatory analysis.
+
 ### C3. Kappa threshold and prevalence
 
-Decision rule for H7 test 1 is set at **kappa lower 95% bound above 0.60**, with
+Decision rule for H7 test 1 was set at **kappa lower 95% bound above 0.60**, with
 0.80 described as the target in prose but not as a rule. Kappa is
 prevalence-sensitive and the direction-correct base rate differs between Phase 2
 (suprathreshold) and Phase 3 (near threshold), so raw percent agreement and
-Gwet's AC1 are preregistered as companion descriptives to make a prevalence
+Gwet's AC1 were preregistered as companion descriptives to make a prevalence
 artefact diagnosable rather than fatal.
 
 The base rate feeding the Task 6 margin derivation must be **assumed**, not taken
 from the pilot, per Section 5.12 note 5. Source is Study 5, now vendored at
 `reference/study5_snapshot/`.
+
+**RESOLVED. Approved by Norm 2026-08-07. The artefact this entry anticipated
+occurred, and the companions did their job.**
+
+Kappa is degenerate for this design, not merely sensitive. With a direction-correct
+base rate near 0.95, chance agreement is almost as high as observed agreement, so
+in simulation kappa reads about **+0.19 at zero injected between-device bias**,
+already far below any usable floor, and it is **non-monotonic** in the bias it is
+meant to track:
+
+| Injected bias | 0 | 100 | 200 | 400 |
+|---|---|---|---|---|
+| Percent agreement | 0.914 | 0.905 | 0.882 | 0.809 |
+| Gwet AC1 | 0.904 | 0.893 | 0.864 | 0.759 |
+| Cohen's kappa | +0.19 | +0.04 | +0.06 | +0.14 |
+
+A rule that fails when the devices agree perfectly cannot discriminate device
+quality. **Gwet's AC1 is promoted from companion to decision rule, at a lower 95%
+bound above 0.80.** Kappa and percent agreement are retained as descriptives
+without thresholds. Both companions are monotonic across the same range.
+
+This entry is the reason the failure was diagnosable rather than fatal: naming the
+companions in advance is what allowed the substitution to be made on evidence
+instead of on preference. See prereg Sections 5.9 and 5.13.
 
 ### C4. H7's usable trial count is smaller than it looks, and its dropouts are informative
 
@@ -368,22 +428,31 @@ Two consequences the power simulation must honour:
 
 **Catch trials are excluded.** The guard is `if (!is.na(delta) && delta != 0)`,
 so no-change trials never get a `direction_correct` value. Trials arrive in
-blocks of five with one catch trial, so H7's kappa rests on roughly **four fifths**
-of Phase 3 trials, not all of them. Simulating 25 trials per participant
-overstates H7's information by about 20%.
+blocks of five with one catch trial, so H7's agreement statistic rests on roughly
+**four fifths** of Phase 3 trials, not all of them. Simulating 25 trials per
+participant overstates H7's information by about 20%.
 
 **Device-specific dropout is the most important failure mode and is currently
 invisible.** `direction_correct` is NA when the breaths it needs were not
 detected. In a two-device comparison the accelerometer may fail to detect a
 breath where the stretch belt succeeds, producing a value on one device and NA on
-the other. Cohen's kappa needs complete pairs, so those trials silently drop out
-of the very analysis that is supposed to detect them. A device that yields no
-answer is not equivalent to one that yields the right answer.
+the other. Any agreement coefficient needs complete pairs, so those trials
+silently drop out of the very analysis that is supposed to detect them. A device
+that yields no answer is not equivalent to one that yields the right answer.
 
-**Action.** Add to H7: report the rate of device-specific NA alongside kappa, and
-preregister it as part of the decision rather than as a footnote. Note also that
-`na.rm = TRUE` lets a pair mean be computed from a single detected breath, so
-partial detection degrades quietly rather than becoming NA.
+**Action.** Add to H7: report the rate of device-specific NA alongside the
+agreement statistic, and preregister it as part of the decision rather than as a
+footnote. Note also that `na.rm = TRUE` lets a pair mean be computed from a single
+detected breath, so partial detection degrades quietly rather than becoming NA.
+
+**RESOLVED in the power analysis revision, 2026-08-07 to 2026-08-12.** Both
+consequences are now preregistered. Catch-trial exclusion is stated in prereg
+Section 5.9 under "Trial count is smaller than it looks", including the Block 3
+unchanged condition, which drops that block from 9 trials to 6, and the simulation
+excludes them explicitly rather than assuming 25 usable Phase 3 trials.
+Device-specific missingness is prereg Section 5.9 test 3, written into the decision
+rule rather than reported beside it, and the single-breath pair mean is named
+there too. Note that the statistic is now Gwet's AC1, not kappa; see C3.
 
 ### B11. The pacer does not run at its nominal period
 
@@ -601,32 +670,58 @@ Two implementation notes:
   ranges from about 2 s to 27 s across the pilot sample with no bearing on data
   quality. An earlier reading of that overrun as pure fitting time was wrong.
 
-### C5. Calibration fit and device lag are not independent
+### C5. Calibration fit and the belt-to-pacer offset are not independent
 
-A perfect calibration model still scores only `cos(2*pi*lag/period)` when
+Originally filed as "calibration fit and device lag". **The quantity is no longer
+called device lag**: it is not a pure transduction delay and it contains
+participant anticipation of the pacer, which is negative. Renamed throughout per
+the resolution recorded earlier in this document, and the extracted field is
+`belt_offset_ms`, not `device_lag_ms`.
+
+A perfect calibration model still scores only `cos(2*pi*offset/period)` when
 correlated against an unshifted pacer:
 
-| device lag | ceiling on calibration r |
+| belt-to-pacer offset | ceiling on calibration r |
 |---|---|
 | 200 ms | 0.951 |
 | 320 ms | 0.876 |
 | 500 ms | 0.707 |
 | 700 ms | 0.454 |
 
-At a 500 ms lag the ceiling sits exactly on the software's `SYNC_GOOD` threshold
-of 0.70, so a participant with a sound belt and an unremarkable lag is graded
+At a 500 ms offset the ceiling sits exactly on the software's `SYNC_GOOD` threshold
+of 0.70, so a participant with a sound belt and an unremarkable offset is graded
 "Fair" on model quality they do not lack.
 
-This matters because **`calibration_fit` and `device_lag_ms` are both whitelisted
+This matters because **`calibration_fit` and the offset are both whitelisted
 inputs to the power simulation** (Section 1.7). Treating them as independent
 parameters double-counts one underlying quantity and will misstate the simulated
 spread of calibration quality.
 
 `R/calibration.R` now returns both `mlr_r_calib` (uncorrected, comparable to the
 live gate participants were actually held to) and `mlr_r_calib_lagcorr` (the
-model quality after removing the estimated lag). The extraction script should
-carry both, and the simulation should draw lag first and derive the fit ceiling
-from it rather than sampling the two independently.
+model quality after removing the estimated offset). The extraction script should
+carry both, and the simulation should draw the offset first and derive the fit
+ceiling from it rather than sampling the two independently.
+
+**RESOLVED as to naming and reporting. The simulation recommendation became moot.**
+
+The extraction script carries both, reported as `calibration_fit` and
+`calibration_fit_lagadj`. Note the output field is `_lagadj`, not `_lagcorr`: the
+blocked-substring guard in `scripts/02_estimate_variance_components.R` fires on
+"corr", and the correct fix was to rename the field rather than weaken the guard.
+The internal `R/calibration.R` return value keeps its original name.
+
+The confounding is real and measured. Across the internal pilot the fit had a
+median of **0.586 uncorrected against 0.697 lag-adjusted**, so much of the apparent
+shortfall is this mechanical confound rather than poor weights. That is now stated
+in prereg limitation 7.
+
+The advice to draw the offset first and derive the fit ceiling **was not
+implemented, because it turned out not to be needed**: the final simulation
+(`simulation/breathbelt_sim.R`) does not take calibration fit or the offset as
+inputs at all. Neither enters any power calculation, so there is no independent
+sampling left to double-count. Both remain extracted as preprocessing diagnostics,
+which is what prereg Section 1.7 justifies them on.
 
 ### B10. Trigger codes are a nibble split, not a numeric offset
 
@@ -698,6 +793,30 @@ runner-up. **Recommendation:** report the margin distribution alongside
 margin is large enough for selection to be meaningful. Whether real data shows
 larger margins than the synthetic case is unknown and must not be checked before
 the extraction runs.
+
+**RESOLVED, and the answer to the open question is: no, real data does not show
+larger margins.**
+
+The margin distribution was extracted as a whitelisted preprocessing diagnostic,
+so the question C6 left open has now been answered legitimately. Across the
+internal pilot the winner's margin over the runner-up had a **median of 0.013**,
+and **17 of 18 participants selected the same model**. That is the synthetic
+result reproduced on real participants, not an improvement on it. On this evidence
+the selected label is close to arbitrary and EH3 is expected to find nothing
+regardless of whether the underlying idea is right.
+
+EH3 is retained as descriptive only, with the margin reported alongside, and
+nothing is interpreted where the margin is small. This is stated in prereg Section
+5.11 and in the EH3 entry of Section 3, so a null result there is not read as
+evidence against the moderation idea.
+
+Two related points now recorded in the prereg rather than only here. First, nothing
+is interpreted from the calibration coefficients themselves, for the
+non-identifiability reason above. Second, the candidate set is now **three models,
+not six**: the three tight-band variants were dropped for biasing extremum timing,
+which removes some of the tie-breaking noise but does not change the conclusion,
+since the collinearity that drives it is a property of the axes rather than of the
+band. See `CONTEXT.md` and prereg Section 5.1 step 5.
 
 ---
 
