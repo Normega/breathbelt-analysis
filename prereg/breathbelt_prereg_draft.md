@@ -1,6 +1,8 @@
 # BreathBelt: Comparing an Accelerometer Chest Strap Against a Stretch Respiration Belt
 
-Pre-registration draft. Thresholds marked **[SIM]** are to be set by the power simulation. Items marked **[NEEDS INPUT]** require information not yet available.
+Pre-registration draft. **No item marked [NEEDS INPUT] or [SIM] remains.** Every equivalence margin, decision threshold, sample size parameter and analysis-procedure detail is set and stated; see Sections 5.12 and 5.13 for the consolidated values and Section 6 for the record of what closed and how.
+
+_Power analysis and margins added 2026-08-10. Sampling plan and final margins fixed 2026-08-14: target 75 enrolled, interim variance re-estimation at 40, hard cap 100. H1's margin set at 150 ms, below the 300 ms ceiling derived from H7._
 
 ---
 
@@ -18,7 +20,21 @@ Recruited through the university SONA portal, from either the course-credit or t
 
 **Pre-session instructions.** Avoid heavy meals, caffeine, and drugs or medication within 30 minutes of the session. No other scheduling constraints.
 
-**Sample size.** To be determined by simulation using the design parameters in Section 5. **[SIM]**
+**Sample size.** **75 participants enrolled.**
+
+Set by the power simulation in Section 5.13. The binding constraint is H6, within-session stability, which reaches 80% power at 75 enrolled and only 70% at 60. Every other confirmatory hypothesis clears 80% at or below 60: H2 at 60, H5 at 40, H3 at 25, and H1, H4, H7 and H8 at 10 or fewer.
+
+The target is stated in **enrolled** participants because not every session yields analysable data. In the internal pilot, 5 of 18 participants produced no matched breaths usable for the breath-level comparison, so 75 enrolled corresponds to roughly 54 analysable. The simulation applies that attrition rather than assuming enrolled and analysable are the same, which would overstate power by about a third.
+
+**The target is provisional by design, and the sampling plan is fixed in advance.** It rests on a single pilot variance component known to about 17%, so a one standard error band on that parameter spans a target of 53 to 103 (Section 5.13). Three numbers are therefore preregistered together:
+
+| | Enrolled N |
+|---|---|
+| Interim variance re-estimation, once | **40** |
+| Target | **75** |
+| Hard cap | **100** |
+
+The re-estimation reads nuisance variance only, on the same blinding terms as the initial pilot, and may move the target in either direction up to the cap. It is not an interim look at any hypothesis. Section 1.7 sets out the full procedure.
 
 **Exclusions.** No participant is excluded a priori on the basis of poor performance or poor signal. Participants who adhere poorly to the pacer, or who calibrate poorly, are informative: the question is whether that poor adherence appears similarly on both devices. Exclusion applies only to incomplete data, defined as a session missing usable signal from either device, or missing the trial-level records needed to align them. Flagged but retained cases are described in Section 5.2.
 
@@ -28,7 +44,7 @@ Recruited through the university SONA portal, from either the course-credit or t
 
 **Stretch belt.** BioPac system: MP160 acquisition unit with a BN-RSPEC BioNomadix Respiration and ECG wireless system. The transmitter is worn by the participant and the receiver module feeds the MP160. Worn over the participant's clothing.
 
-There is no RSP100C amplifier in this setup and therefore no operator-configurable gain or filter stage. The BioNomadix system's bandwidth is fixed in hardware, so the only signal conditioning before digitisation is whatever that hardware imposes. This matters for preprocessing: it is the sole anti-alias protection ahead of decimation, so decimation is performed with an explicit anti-alias filter rather than by taking every Nth sample.
+There is no RSP100C amplifier in this setup and therefore no operator-configurable gain or filter stage. The BioNomadix system's bandwidth is fixed in hardware at **DC to 10 Hz** on the respiration channel, so the only signal conditioning before digitisation is whatever that hardware imposes. This matters for preprocessing: it is the sole anti-alias protection ahead of decimation. Because it is a soft corner rather than a brick wall, decimation is performed with an explicit anti-alias filter rather than by taking every Nth sample. See Section 1.6.
 
 **Pacer.** A visual pacing stimulus, an avatar circle that expands and contracts, coded directly into the study software. Participants inhale as the circle expands and exhale as it contracts.
 
@@ -151,7 +167,9 @@ Blocks 3 and 4 are therefore off by one from the `phase2` and `phase3` labels. `
 
 **Pacer signal.** The pacer position is deterministic: a sine at a known period, anchored to a known onset time. It is reconstructed analytically from the software's trial records rather than read from the recorded data.
 
-**Amplifier.** No configurable amplifier stage exists: the BN-RSPEC BioNomadix system has fixed hardware bandwidth. **[NEEDS INPUT]** the datasheet bandwidth, to be cited rather than measured.
+**Amplifier.** No configurable amplifier stage exists: the BN-RSPEC BioNomadix system has fixed hardware bandwidth. The respiration channel has a **fixed wideband response of DC to 10 Hz**, specified by the manufacturer to resolve respiratory effort up to 600 breaths per minute as well as near-static conditions such as apnoea. The ECG channel, which this study does not analyse, runs 0.05 to 150 Hz. Both are cited from the manufacturer's published specification rather than measured here.
+
+**Consequence for decimation.** The 10 Hz corner sits below the 12.5 Hz Nyquist frequency of the 25 Hz analysis grid, so the hardware bandwidth is not in itself an aliasing hazard. It is a first-order corner rather than a brick wall, though, so out-of-band energy is attenuated and not removed. Decimation from 2000 Hz is therefore still performed with an explicit anti-alias filter rather than by taking every 80th sample.
 
 **AcqKnowledge template.** The acquisition template defines 17 channels at 2000 Hz: two respiration, two ECG, eight digital trigger lines, one derived trigger channel, two heart rate and two respiration rate calculation channels. The template governs display and derived channels only; the two respiration channels are stored raw in Volts and are not filtered by it.
 
@@ -159,7 +177,7 @@ Blocks 3 and 4 are therefore off by one from the `phase2` and `phase3` labels. `
 
 ## 1.7 Internal pilot and sample size
 
-At the point this pre-registration was written, 17 participants had completed the full session. No outcome from those sessions has been examined.
+At the point this pre-registration was written, 18 participants had completed the full session. No outcome from those sessions has been examined.
 
 Rather than discard them or guess at the variance parameters needed to set a sample size, they are declared an **internal pilot**. Their data are used to estimate nuisance variance only. They remain in the confirmatory sample. Using interim data to re-estimate a nuisance variance, without examining the quantities under test, has negligible effect on the false positive rate, and is a recognised design rather than an informal look.
 
@@ -174,11 +192,13 @@ Nuisance parameters. None appears in any decision rule in Section 5.
 - Between-participant standard deviation of the breath-depth bias
 - Between-participant standard deviation of each breathing-variability measure
 - Distribution of Block 4 trial counts
-- Distribution of breath counts
-- Distribution of calibration fit
+- Distribution of **per-device** breath counts
+- Distribution of calibration fit, both uncorrected and lag-adjusted
 - Distribution of the estimated belt-to-pacer offset
 - Distribution of alignment residuals
-- Frequency with which each of the six calibration models is selected
+- Frequency with which each candidate calibration model is selected, and the winning model's margin over the runner-up
+
+Breath count is extracted **per device**, never as a count of matched breaths. The matched count is the numerator of H2's match proportion, which is blocked, so reporting it alongside per-device counts would disclose the blocked quantity by division. An earlier version of the extraction script reported the matched count under the label "breath count"; this was found and corrected before any output was read.
 
 ### Blocked
 
@@ -188,6 +208,7 @@ Each is an effect entering a confirmatory decision rule. None is computed, or is
 |---|---|
 | Mean breath-duration bias | H1 |
 | Proportion of breaths matched between devices | H2 |
+| Count of breaths matched between devices | H2, as the numerator of the above |
 | Onset timing difference between devices | H2 |
 | Duration or depth error broken down by imposed rate | H3 |
 | Any error relative to the pacer | H4 |
@@ -207,19 +228,50 @@ Two calls warrant note. Calibration fit and the belt-to-pacer offset are extract
 3. Run the extraction. Read only its report.
 4. Set the equivalence margins, deriving the breath-duration margin from the downstream classification in H7 where possible.
 5. Simulate power across a grid of sample sizes and fix a provisional target.
-6. Re-estimate the variance once, at a pre-specified interim sample size, and adjust the target within a pre-specified cap.
+6. Re-estimate the variance **once, at 40 enrolled**, and adjust the target within a **hard cap of 100 enrolled**. Both numbers are fixed here, in advance, and are set out in full below.
+
+### The interim re-estimation, fixed in advance
+
+**Trigger.** Exactly one re-estimation, when the 40th participant has been enrolled. Not repeated, not triggered by any result, and not conditional on anything observed.
+
+**What is recomputed.** The same extraction script, unchanged, over the enlarged sample. Only the nuisance variance components in Section 5.12 are read. Every quantity blocked at the initial estimate stays blocked at the interim: the re-estimation is not an interim look at the hypotheses, and nothing about whether any hypothesis is passing is computed or reported.
+
+**Why 40.** The relative standard error of a standard deviation estimated from *n* observations is approximately 1/sqrt(2(n-1)). At the pilot's 18 that is 17.1%; at 40 it is 11.3%, so a third of the uncertainty is removed. Waiting to 50 gains only a further 1.2 points and costs ten participants of room to react. Forty is where most of the achievable sharpening has been banked while adjustment is still feasible.
+
+**What may change.** The enrolment target only. Margins, decision rules, hypotheses, the analysis plan, and the pilot participant list are all fixed and are **not** revisited. The target may move up or down, bounded above by the cap.
+
+**Why the cap is 100.** If the true CV spread is one standard error above the pilot estimate, H6 needs 103 enrolled for 0.80 power, and stopping at 75 would leave it at 0.665, which is too low for a null result to be interpretable. A cap of 100 holds H6 at 0.794 in that unfavourable case, against 0.897 at the point estimate. A cap at the target would have made the re-estimation unable to act in the only direction that matters.
+
+**If the cap binds.** Should the re-estimate imply a target above 100, recruitment stops at 100 and the shortfall is reported as a limitation, with the realised power stated. The margin is not widened to manufacture power, and no hypothesis is dropped.
 
 ### Precision this affords
 
-A variance estimate from 17 participants is usable but not sharp. The sampling distribution of a standard deviation on 16 degrees of freedom gives a 95% interval running from 0.74 to 1.52 times the true value. Because the required sample size scales with the variance, that interval widens to roughly 0.55 to 2.32 times the point estimate: a provisional target of 60 is consistent with a true requirement anywhere between 33 and 139.
+A variance estimate from 18 participants is usable but not sharp, and in this case one of the two components came back at its boundary.
 
-The interim re-estimation at step 6 exists for this reason, and matters more than precision in the initial estimate.
+**The between-participant variance was estimated at exactly zero.** A random-intercept model fitted to the pooled breath-level differences returned a singular fit: the observed spread of participant mean biases is fully explained by within-participant sampling noise. Zero between-participant variance is the *most favourable possible* value for an equivalence design, because it makes the participant-level mean maximally precise and minimises the required sample size. Powering on it would be exactly the optimism this section exists to prevent.
+
+The power analysis therefore uses the **95% profile upper bound of 35.3 ms**, not the point estimate. The within-participant standard deviation, 308.2 ms, is estimated well away from any boundary and is used directly.
+
+A small true between-participant value is substantively plausible rather than suspicious. Breath duration is a timing quantity, and unlike breath depth it has no obvious route by which body shape, posture, or exactly how the strap sits would make it differ systematically between people.
+
+The interim re-estimation at step 6 exists for this reason and matters more than precision in the initial estimate.
 
 ### Assumed bias
 
 Power for an equivalence test is highest when the true bias is exactly zero, so assuming zero yields an optimistic sample size. The simulation instead assumes a non-zero bias of one quarter of the equivalence margin. This is fixed in advance.
 
-**[NEEDS INPUT]** Pilot participant list, to be recorded here before extraction.
+### Pilot participant list
+
+Fixed before extraction and recorded here. Eighteen participants, being every enrolled participant with an accelerometer file, an acquisition file, Block 3 and Block 4 trial records, and a recorded Block 4 end time:
+
+```
+3997   9082   9085   13738  14425  14542  14677  14701  16117
+16753  16807  17446  17704  17734  17755  17758  17788  17896
+```
+
+Participant 998877 is a test account and is excluded. Six further identifiers appear in acquisition filenames with no accelerometer file (17926, 5965, 14776, 16549, 16711, 9967) and are treated as adjacent-seat occupants with missing or other-study belt data. If any are recovered they join the **confirmatory** sample, not this pilot, and contribute at the interim re-estimation in step 6.
+
+This list is not extended after output has been seen.
 
 ---
 
@@ -315,7 +367,7 @@ The prediction is an inverted U across imposed rate.
 This is the only hypothesis that tests waveform shape rather than summary statistics. It matters for anything derived from the shape of a breath rather than its timing: the ratio of inhale to exhale duration, flow estimates, and the onset detection that H2 depends on.
 
 **EH3. The chosen calibration model may act as a hidden moderator.**
-Calibration selects, per participant, whichever of six candidate transformations best reconstructs the pacer. Different participants therefore run under different transformations. We will describe how often each is selected, and test whether the selected model predicts subsequent agreement between the belts. Not a focal hypothesis.
+Calibration selects, per participant, whichever of three candidate transformations best reconstructs the pacer. Different participants therefore run under different transformations. We will describe how often each is selected, and test whether the selected model predicts subsequent agreement between the belts. Not a focal hypothesis, and on the internal pilot the selection looks close to arbitrary; see Section 5.11.
 
 **EH4. Directional consistency with prior findings.**
 Serves ERQ1. Prior work suggests that accuracy and self-report come apart while confidence and self-report do not. Two parts:
@@ -343,8 +395,8 @@ Definitions for every term used in Section 3, with its source.
 | Term | Definition | Source | Status |
 |---|---|---|---|
 | **Stretch belt signal** | Respiration channel from the BioPac amplifier, recorded at 2000 Hz, decimated to 25 Hz. The active channel is identified by variance, not by slot position, because slot order does not reliably map to seat. | BioPac acquisition file | Defined |
-| **Accelerometer signal** | Single breathing waveform reconstructed from three-axis acceleration using participant-specific weights. Axes are band-pass filtered from 0.05 to 1.0 Hz, combined by the calibrated weights, then low-pass filtered at 0.6 Hz. All filters are Butterworth of **design order 4**, applied forwards and then backwards so no phase shift is introduced. See Section 5.1 for the full specification. | Accelerometer session file plus calibration weights | Defined |
-| **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three band-passed acceleration axes, fitted on the Block 1 calibration window only. Refitted offline; the weights computed live in the software are used only for the participant's on-screen preview. | Fitted from Block 1, approximately 3,900 samples | Defined |
+| **Accelerometer signal** | Single breathing waveform reconstructed from three-axis acceleration using participant-specific weights. Two filtered copies are carried, not one: a **detection copy** band-passed 0.05 to 0.6 Hz and a **measurement copy** band-passed 0.05 to 2.0 Hz. Extrema are located on the detection copy and then snapped onto the measurement copy before any time or amplitude is read. See Section 5.1. | Accelerometer session file plus calibration weights | Defined |
+| **Calibration weights** | Coefficients from a multiple linear regression predicting the reconstructed pacer position from the three acceleration axes band-passed 0.05 to 1.0 Hz, fitted on the Block 1 calibration window only. The narrow 0.10 to 0.4 Hz band offered by the software is **not** used; see Section 5.1. Refitted offline; the weights computed live are used only for the participant's on-screen preview. | Fitted from Block 1, approximately 3,900 samples | Defined |
 | **Pacer signal** | Sine wave at the commanded period, anchored to the recorded block or trial onset. Reconstructed analytically. The recorded pacer column is empty in the data files and is not used. | Software trial records | Defined |
 | **Common time base** | Both signals resampled to a uniform 25 Hz grid. Accelerometer sample times are reconstructed by back-assigning from each packet timestamp at 4.916 ms intervals, the empirically measured sample period. | Preprocessing | Defined |
 | **Belt-to-pacer offset** | Time offset between a device's breathing signal and the reconstructed pacer, estimated by shifting one against the other until correlation peaks. Searched over plus or minus 2000 ms. Deliberately **not** called device lag: it is not a pure transduction delay. See Section 5.1. | Preprocessing | Defined |
@@ -353,11 +405,11 @@ Definitions for every term used in Section 3, with its source.
 
 | Term | Definition | Source | Status |
 |---|---|---|---|
-| **Breath onset** | Trough in the filtered breathing signal, marking the start of an inhale. Detected independently in each device's signal. | Both devices | Defined |
+| **Breath onset** | Trough in the filtered breathing signal, marking the start of an inhale. Located by a prominence detector on the detection copy, with a minimum prominence of 0.4 in normalised units and a minimum separation of 1 s, then snapped onto the measurement copy. Detected independently in each device's signal by the **same function with the same parameters**, so no per-device tuning can inflate agreement. See Section 5.1. | Both devices | Defined |
 | **Breath duration** | Interval between consecutive breath onsets, in milliseconds. Also referred to as breath period. | Both devices | Defined |
 | **Breath depth** | Peak-to-trough amplitude of each breath cycle, in each device's native units. Compared after within-participant standardisation, since the units are not commensurable. | Both devices | Defined |
 | **Breath count** | Number of detected onsets in a defined window. | Both devices | Defined |
-| **Breathing variability** | Three measures over each free-breathing block: the spread of breath durations relative to their mean; the typical size of the change from one breath to the next; and the predictability of the sequence. | Both devices | Defined |
+| **Breathing variability** | **Two** measures over each free-breathing block: the coefficient of variation of breath durations, and the root mean square of successive differences. Sample entropy was dropped; see Section 5.7. | Both devices | Defined |
 | **Waveform shape agreement** | Frequency-resolved agreement between the two signals across the respiratory band, after undoing the derivative relationship. See Section 5.11. | Both devices | Defined |
 
 ## 4.3 Task measures
@@ -385,24 +437,31 @@ Definitions for every term used in Section 3, with its source.
 
 | Term | Definition | Source | Status |
 |---|---|---|---|
-| **Signal quality index** | Explained variance ratio. Over a rolling 15 s window of the band-passed three-axis acceleration, the proportion of total movement variance that lies along the calibrated breathing direction. Bounded 0 to 1. Falls when the participant shifts posture, the strap slips, or non-respiratory movement intrudes. Not recorded during sessions; computed offline from raw acceleration and the calibration weights. Tuning to be performed on these data. **[SIM]** | Computed offline | Defined, to be tuned |
-| **Selected calibration model** | Which of six candidate transformations won calibration for each participant: multiple regression or principal component analysis, on a wide or narrow filter band, with or without a smoothing step. | Session record | Defined |
-| **Calibration fit** | Correlation between the reconstructed accelerometer signal and the pacer during Block 1. | Session record and refit | Defined |
+| **Signal quality index** | Explained variance ratio. Over a rolling 15 s window of the band-passed three-axis acceleration, the proportion of total movement variance that lies along the calibrated breathing direction. Bounded 0 to 1. Falls when the participant shifts posture, the strap slips, or non-respiratory movement intrudes. Not recorded during sessions; computed offline from raw acceleration and the calibration weights. Used **continuously** in H6 test 2; flagged at a fixed anchor of **0.50** in Section 5.2. No threshold is tuned; see Section 5.8. | Computed offline | Defined |
+| **Selected calibration model** | Which of **three** candidate transformations won calibration for each participant: multiple regression with or without a smoothing step, or principal component analysis, all on the 0.05 to 1.0 Hz band. The three narrow-band variants were dropped; see Section 5.1. | Session record | Defined |
+| **Model margin** | Fit of the winning calibration model minus fit of the runner-up. Selection is only interpretable where this is meaningfully above zero. | Refit | Defined |
+| **Calibration fit** | Correlation between the reconstructed accelerometer signal and the pacer during Block 1. Reported both uncorrected and after removing the estimated belt-to-pacer offset, because the two are mechanically confounded: a perfect model still scores only cos(2 pi offset / period) against an unshifted pacer. | Session record and refit | Defined |
 | **Alignment residual** | Per-trial discrepancy between the two devices' clocks after linear correction. Diagnostic. | Preprocessing | Defined |
 
 ## 4.6 Expected observation counts
 
-From the one fully processed participant, for design purposes.
+From the internal pilot of 18 participants, for design purposes. Nominal counts are what the design delivers; **usable** counts are what survives detection and between-device matching, and they are what the power simulation uses.
 
 | Unit | Count per participant |
 |---|---|
 | Block 3 trials | 9, fixed |
-| Block 4 trials | 25 observed; range 20 to 60 by stopping rule |
-| Paced breaths | Approximately 136 |
-| Free-breathing breaths | Approximately 60, across both blocks |
-| Total breaths | Approximately 196 |
+| Block 4 trials | median 25, range 24 to 35 observed; 20 to 60 by stopping rule |
+| Paced breaths, nominal | Approximately 136 |
+| Free-breathing breaths, nominal | Approximately 60, across both blocks |
+| Total breaths, nominal | Approximately 196 |
+| Free-breathing breaths detected, per device | median 59, range 48 to 78 |
+| **Matched breaths usable for the breath-level comparison** | **Approximately 42** |
 | Free-breathing signal | 240 s |
 | Total streaming time | Approximately 20 minutes |
+
+**The gap between nominal and usable is large and is not an error.** A breath contributes to the duration comparison only when both devices resolve both of its ends, which is the rule H1 requires and is stated in Section 5.3. Roughly 42 of about 196 nominal breaths survive that rule.
+
+**Participant-level attrition.** In the pilot, 13 of 18 participants yielded any usable matched breaths at all; the remaining 5 yielded none. The simulation applies that yield, so a target stated in enrolled participants is converted to analysable participants before power is computed. The five contributing nothing coincide in number with the five flagged for low calibration fit, which is consistent with poor calibration propagating into failed matching, but this has not been verified participant by participant because that would require a per-participant disclosure.
 
 ---
 
@@ -424,14 +483,30 @@ Fixed in advance and applied identically to every participant.
    - **Design order 4.** A 4th-order Butterworth is designed, then applied twice, once forwards and once backwards.
    - Two passes give **zero phase distortion** and an **effective magnitude response of order 8**, i.e. roughly 48 dB per octave in the stopband, since the squared magnitude response of a 4th-order filter is that of an 8th-order one.
    - In R: `signal::butter(n = 4, ...)` followed by `signal::filtfilt`. The reported order is the argument to `butter()`, not the effective order.
-   - The same convention applies to the 0.6 Hz low-pass and to the narrow 0.10 to 0.4 Hz band used by the tight calibration model variants.
+   - The same convention applies to every other filter in the chain: the 0.6 Hz detection band and the 2.0 Hz measurement band at step 7, and the 0.6 Hz smooth used by one of the three calibration candidates at step 5.
 
    This differs from the live software, which applies 2nd-order biquad sections under the same forwards-and-backwards scheme and is therefore effectively 4th order. The offline specification above is authoritative; the live filters exist only to drive the participant's on-screen preview.
 
    **Edge handling.** Every zero-phase filter pass is preceded by odd-reflection padding of 15 seconds at each end, and the padding is discarded afterwards. This is not cosmetic. The calibration window is 16 s while the 0.05 Hz high-pass corner has a 20 s period, so an unpadded filter spends the entire window settling: in synthetic testing an unpadded pass recovered an injected 320 ms offset as 160 ms and failed to recover the breathing direction at all. The live software pads for the same reason. `signal::filtfilt` in R does not pad by default, so the padding is applied explicitly.
-5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Block 1 window only. Apply to the whole session, then low-pass at 0.6 Hz.
+5. **Calibrate.** Fit multiple linear regression weights predicting the reconstructed pacer from the three band-passed axes, using the Block 1 window only.
+
+   **Candidate models: three, not six.** The software offers each transformation on a wide 0.05 to 1.0 Hz band and on a narrow 0.10 to 0.4 Hz band. **The narrow band is not used offline.** A 0.4 Hz cutoff sits barely above the respiratory fundamental, so it symmetrises every breath and biases extremum timing, which is the same defect described at step 7 below. The consequence was measured on the designated debugging participant, whose winning model under the old rule was the narrow-band variant: its median duty cycle read between 0.48 and 0.55 in every block, pinned at 0.50 regardless of true morphology, while the stretch belt on the same breaths read 0.43 to 0.47. A reconstruction that cannot express inhale-exhale asymmetry cannot support H2's onset timing, H3's depth-by-rate interaction, or EH2's waveform shape.
+
+   Dropping it also makes participants comparable: under the old rule a narrow-band participant and a wide-band participant were not running the same measurement. The candidate set is therefore multiple regression, multiple regression with a 0.6 Hz smooth, and principal component analysis, all on 0.05 to 1.0 Hz.
+
 6. **Correct for the belt-to-pacer offset.** Estimate it by cross-correlation over plus or minus 2000 ms, per participant, on the Block 1 window. Apply the same value throughout the session.
-7. **Detect breath onsets.** Independently in each device's signal, using the same trough-detection rule.
+7. **Detect breath onsets.** Independently in each device's signal, using the same function with the same parameters. Per-device tuning is not permitted: it would inflate exactly the agreement H2 exists to test.
+
+   **Two filtered copies, not one.** Extrema are located on a **detection copy** band-passed 0.05 to 0.6 Hz, then snapped onto a **measurement copy** band-passed 0.05 to 2.0 Hz before any time or amplitude is read from them.
+
+   Detecting and measuring on a single narrow band symmetrises the waveform and pushes extrema late. On synthetic breaths with exact ground truth, the worst single-device trough timing error over commanded periods of 2 to 6 s was 293 ms with a 0.6 Hz measurement band against 199 ms at 2.0 Hz. The 2.0 Hz cutoff also sits at the knee of the duty-cycle bias curve, which matters for EH2.
+
+   **Detector.** Local maxima filtered by prominence, minimum prominence 0.4 in normalised units, minimum separation 1 s, with extrema then refined onto the measurement copy within a 0.5 s window. The prominence threshold was fixed by inspecting what it rejects on the designated debugging participant: the accelerometer's count of implausible inter-onset intervals falls 26, 20, 17, 12, 10 across thresholds of 0.10 to 0.40 and then plateaus at 9 through 0.80, so 0.4 sits at the knee. Below 0.3 the detector manufactures short cycles out of noise. The stretch belt is clean at every threshold, so the accelerometer sets the constraint.
+
+   Onsets are detected **once on the continuous session** and then assigned to blocks by time, rather than by filtering each block separately. A Block 3 or Block 4 trial is only about 16 s long while the 0.05 Hz corner has a 20 s period, so filtering trial segments individually cannot settle.
+
+   **This detector is shared.** The same function produces the onsets used for the internal pilot variance estimation and for every confirmatory analysis. If they differed, the variance components would not describe the signal the confirmatory analysis sees.
+
 8. **Compute the signal quality index** in rolling 15 s windows.
 
 **Circularity control.** Calibration weights are fitted against the pacer, never against the stretch belt. This keeps the stretch belt out of the accelerometer's construction, so agreement between the two devices is not inflated by shared fitting. A version fitted against the stretch belt on the pre free-breathing block will be reported as a sensitivity analysis and interpreted as an upper bound only.
@@ -449,6 +524,21 @@ The offset is measured between a device's breathing signal and the pacer, so it 
 A negative value is therefore an expected result, not an anomaly. No positivity expectation is preregistered. Offsets are reported as a distribution, and values beyond plus or minus 1000 ms are flagged for inspection as implausible in either direction.
 
 True device lag is not identifiable from this quantity. It would require a between-device comparison, which is reserved for the confirmatory analysis.
+
+### A block-dependent between-device offset, predicted in advance
+
+The two devices do not measure the same physical quantity. The stretch belt measures displacement; the accelerometer measures acceleration, which amplifies harmonic *n* of the breath by *n* squared. For a **symmetric** breath that changes nothing about where the trough falls. For an **asymmetric** breath it reshapes the waveform and moves the trough.
+
+This has a consequence the design makes sharp, and it is preregistered here as a prediction rather than discovered later:
+
+- **The pacer is symmetric.** Its radius follows (1 minus cosine) over 2, so a participant tracking it breathes with an inspiratory fraction near 0.50. In the paced blocks the between-device onset offset from this mechanism is therefore near zero.
+- **Spontaneous breathing is not symmetric.** Its inspiratory fraction runs nearer 0.43, and at that asymmetry the same mechanism produces a systematic between-device onset offset of roughly 135 to 225 ms.
+
+On synthetic breaths with exact ground truth, the differential trough bias between an acceleration-derived and a displacement-derived signal was under 1 ms at an inspiratory fraction of 0.50 and between 135 and 250 ms at 0.35 to 0.45, at every measurement band tested. The band barely moves it; the asymmetry drives it entirely.
+
+**The Block 1 correction cannot remove it.** The belt-to-pacer offset is estimated on the calibration block, which is paced and therefore symmetric, where this component is zero. Applied to the free-breathing blocks it under-corrects by the full amount. Estimating a separate free-breathing correction is not available either: with no pacer there, it could only be fitted between the two devices, which is H2's estimand and is blocked.
+
+H2's tolerance is therefore block-specific, and Section 5.4 states it. These magnitudes come from a synthetic model of asymmetry rather than a measurement of this study's data, and the inspiratory fraction is taken from an external archive of stretch-belt recordings, so the mechanism and its direction are firm while the magnitudes are order-of-magnitude.
 
 ### Decomposing the belt-to-pacer offset
 
@@ -509,9 +599,23 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 **Estimand.** Mean difference in breath duration between devices, and its limits of agreement.
 
-**Unit.** Individual breath, matched between devices. Approximately 196 per participant. Multiple observations per participant, so repeated-measures methods are used throughout.
+**Unit.** Individual breath, matched between devices. Approximately 42 usable per participant, not the roughly 196 nominal; see Section 4.6 and the matching rule below.
 
-**Primary test.** Two one-sided tests procedure. Two separate one-sided tests ask whether the mean difference is meaningfully greater than the lower margin, and whether it is meaningfully less than the upper margin. Rejecting both supports equivalence. The margin is the primary quantity the power simulation must resolve. **[SIM]**
+**Matching rule.** Onsets are matched between devices nearest-first, greedily, within a **500 ms tolerance**, on lag-corrected onsets. A breath contributes a duration only when **both devices resolve both of its ends**: the opening and closing onsets are each a matched pair and each is adjacent in its own device's onset sequence.
+
+Two parts of that need justifying.
+
+*Why 500 ms, and why it is a single value where H2's is block-specific.* The two windows do different jobs. H2's tolerance is a **test parameter**: detection agreement is the hypothesis, so the window is pinned to what the recording can support and is widened in the free-breathing blocks only to absorb the offset Section 5.1 predicts there. H1's window is **bookkeeping**: it answers only "is this the same breath", so one value serves every block and no result depends on it. A window as tight as H2's paced value of 150 ms would admit only breaths that already agree in timing to within 150 ms, which conditions H1's duration comparison on good timing agreement and biases the within-participant standard deviation downward. 500 ms also comfortably exceeds the free-breathing offset, so H1's matching does not degrade between blocks the way H2's detection score is expected to. 500 ms cannot create false pairs: a window only mismatches if it reaches past the midpoint between adjacent breaths, and the fastest breathing in the design is Block 4's 2.0 s floor, where the half-period is 1000 ms. If a device misses a breath entirely, the neighbouring onset is a full period away and falls outside the window, so a miss stays a miss.
+
+*Why both ends must be resolved.* The permissive alternative, taking each device's own next onset without requiring it to be matched, admits **detection misses as though they were duration disagreements**: a device that misses the closing onset reports a duration spanning two breaths, contributing an error of a full breath period. Measured on the pilot, the within-participant standard deviation of the difference rose from 315 ms under the strict rule to 1460 ms under the permissive one, against a breath period near 4000 ms. That is a detection statistic wearing a duration statistic's clothes, and detection is H2's question. The cost of the strict rule is the reduced usable count in Section 4.6, and it is reported rather than hidden.
+
+**Primary test.** Two one-sided tests procedure. Two separate one-sided tests ask whether the mean difference is meaningfully greater than the lower margin, and whether it is meaningfully less than the upper margin. Rejecting both supports equivalence.
+
+**Margin: 150 ms.** Set against a derived ceiling of 300 ms, and deliberately tighter than it.
+
+The derivation in Section 5.13 answers the question "at what between-device duration bias do the study's downstream conclusions start to change", and returns 300 ms. That is a **ceiling on what may be tolerated**, not a statement of what should be claimed. The design supports far more precision than the ceiling requires: roughly 27 ms at 0.80 power at the target sample size. Preregistering the ceiling would have claimed much less than the study can support, while preregistering the floor would risk failing for reasons unrelated to the instrument.
+
+**150 ms** sits between them, at half the derived ceiling and about 5.5 times the 0.80-power floor. Halving the margin costs nothing in sample size, because the target is set by H6 and H1 remains saturated at every N considered. Fixed in advance, 2026-08-14.
 
 **Supporting descriptives**, reported but not part of the decision rule:
 
@@ -522,7 +626,7 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 **Structure.** Run within each block and pooled across blocks.
 
-**For simulation.** Requires: the equivalence margin in milliseconds; the within-participant standard deviation of breath-duration differences; the between-participant standard deviation of mean difference; breaths per participant.
+**Parameters used.** Margin 150 ms; within-participant standard deviation 308.2 ms; between-participant standard deviation 35.3 ms (95% upper bound); 42 usable breaths per participant. Power is 0.99 at 10 enrolled and 1.00 from 20 upward, so H1 does not constrain the design even at the tightened margin.
 
 ## 5.4 H2: Cycle-level detection
 
@@ -534,17 +638,32 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 1. **Detection agreement.** Match each accelerometer onset to a stretch belt onset within a tolerance window. Compute a balanced detection score combining the proportion of accelerometer onsets that correspond to real ones with the proportion of real onsets the accelerometer found. Computed on lag-corrected onsets, with the lag fixed from Block 1 and not refitted.
 
-   The stretch belt is the reference. The tolerance window must exceed the timing precision of the recording itself. Measured accelerometer timestamp jitter is 35 ms standard deviation with a 95th percentile of 74 ms, so a tolerance tighter than about 75 ms is not supportable. Proposed tolerance: 150 ms. **[SIM]**
+   The stretch belt is the reference. The tolerance window must exceed the timing precision of the recording itself. Measured accelerometer timestamp jitter is 35 ms standard deviation with a 95th percentile of 74 ms, so a tolerance tighter than about 75 ms is not supportable.
+
+   **The tolerance is block-specific, and this is fixed in advance.**
+
+   | Blocks | Tolerance |
+   |---|---|
+   | 3 and 4, paced | **150 ms** |
+   | 2 and 5, free breathing | **400 ms** |
+
+   The paced value is set by timestamp jitter alone, as above. The free-breathing value additionally absorbs the systematic between-device offset that Section 5.1 predicts for asymmetric breathing, roughly 135 to 225 ms, which the Block 1 correction cannot remove because Block 1 is paced and therefore symmetric.
+
+   A single tolerance would be wrong in one direction or the other. At 150 ms throughout, the free-breathing detection score would fall for a reason that is not device disagreement at all, and H2 would fail on a filter-and-physiology interaction rather than on the belts. At 400 ms throughout, the paced test would be loosened far beyond what its own timing precision requires. Both tolerances and the reasoning above are preregistered; the block difference in detection score is reported and interpreted in light of it.
 
 2. **Onset timing difference.** Median signed difference between matched onsets, computed on **uncorrected** onsets, since this reports the practical offset a user of the accelerometer would face. Reported with its interquartile range.
 
 3. **Count agreement.** Intraclass correlation coefficient on breath counts per block, using a two-way model treating both device and participant as random.
 
-**Decision rule.** All three must pass their thresholds. **[SIM]**
+**Decision rule.** All three must pass:
+
+1. Detection score lower 95% bound above **0.85**, against a stated smallest effect of interest of 0.90.
+2. Median onset timing difference within the block's tolerance.
+3. Count agreement coefficient lower 95% bound above **0.75**.
 
 **Note.** Tests 1 and 2 deliberately use different signals. Correcting for lag before matching is necessary or the detection score collapses on signals that track each other well; but reporting timing difference on corrected onsets would be circular, since the lag was fitted to minimise exactly that quantity.
 
-**For simulation.** Requires: expected proportion of onsets matched; distribution of onset timing differences; tolerance window; thresholds for the detection score and the count agreement coefficient.
+**Parameters used.** The expected match proportion is a **stated** smallest effect of interest, not a pilot estimate: the match proportion is blocked by Section 1.7, so no observed value exists. The simulated curve therefore shows how precision grows with sample size at that assumed effect; it is not a prediction of the effect. H2 reaches 0.80 power at 60 enrolled and 0.93 at 75.
 
 ## 5.5 H3: Rate invariance of timing, rate dependence of depth
 
@@ -554,12 +673,12 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 
 **Tests.**
 
-- **(a) Duration.** Mixed-effects model with duration error as outcome, imposed rate as predictor, random intercepts and slopes by participant. The prediction is that rate has no effect. Because this is a claim of no effect, it is tested with equivalence bounds on the rate coefficient, not by failing to reject a null. **[SIM]**
+- **(a) Duration.** Mixed-effects model with duration error as outcome, imposed rate as predictor, random intercepts and slopes by participant. The prediction is that rate has no effect. Because this is a claim of no effect, it is tested with equivalence bounds on the rate coefficient, not by failing to reject a null. **Equivalence bound: 0.05**, in milliseconds of between-device duration error per millisecond of imposed period change. A 1000 ms change in commanded period may move the between-device duration error by at most 50 ms. This is a stated smallest effect of interest.
 - **(b) Depth.** Same model structure with depth error as outcome. The prediction is a positive relationship: error grows as the period shortens. Tested conventionally.
 
 **Rate range caveat.** Block 3 spans only three levels, 3, 4, and 5 s, so it provides limited leverage on rate dependence. Block 4 spans a wider range, from 2.0 to 6.0 s, but at unevenly sampled levels concentrated near each participant's threshold. Both blocks are pooled, with block included as a covariate, and the effective range of imposed rates achieved is reported.
 
-**For simulation.** Requires: equivalence bounds on the duration by rate coefficient; expected slope of depth error on rate; number of distinct rate levels realised per participant; between-participant variance in slopes.
+**Parameters used.** Equivalence bound 0.05 on the duration-by-rate coefficient. H3(a) reaches 0.80 power at 25 enrolled and 0.995 at 60, so it does not constrain the design.
 
 ## 5.6 H4: Accuracy against the pacer
 
@@ -570,7 +689,7 @@ Exclusion applies only to incomplete data: a session missing usable signal from 
 **Tests.**
 
 1. **Per-device accuracy.** Mean signed error and mean absolute error against the commanded period, with participant-level random intercepts. Reported separately for each device.
-2. **Between-device equivalence.** Two one-sided tests procedure on the difference in mean absolute error between devices. **[SIM]**
+2. **Between-device equivalence.** Two one-sided tests procedure on the difference in mean absolute error between devices. **Margin: 150 ms**, the same as H1. The quantity is in the same units and on the same physical scale, so the same threshold of practical interest applies. Stated, not separately derived.
 
 **Note on what this measures.** The difference between measured duration and commanded period contains two components: device measurement error, and the participant's deviation from the pacer. These cannot be separated for a single device. A participant who drifts to 4.4 s when 4.0 s was commanded produces a 400 ms error even on a perfectly accurate device.
 
@@ -583,23 +702,25 @@ H4 is also logically independent of H1. Two devices can agree closely with each 
 
 The same quantity carries the opposite role in H8. Here, deviation from the pacer is nuisance to be cancelled. There, it is the outcome of interest.
 
-**For simulation.** Requires: expected mean absolute error per device; equivalence margin on the difference; paced breaths per participant.
+**Parameters used.** Margin 150 ms. Power is 0.99 at 10 enrolled and 1.00 from 20 upward, so H4 does not constrain the design. Note that the simulation uses H1's participant-level standard deviation for this test. The estimands differ, and a dedicated variance for the between-device difference in mean absolute error is not available without disclosing an error relative to the pacer, which is blocked. Because H4 is saturated at every sample size, this simplification does not affect the target, but the power figure below should be read as H1's precision applied to H4's margin rather than as an independent estimate of H4's own precision.
 
 ## 5.7 H5: Variability agreement
 
-**Estimand.** Agreement between devices on three variability measures.
+**Estimand.** Agreement between devices on **two** variability measures.
 
 **Unit.** Free-breathing block, i.e. Blocks 2 and 5. Two per participant, each 120 s, approximately 30 breaths each.
 
-**Measures.** Spread of breath durations relative to their mean; typical size of the change from one breath to the next; predictability of the sequence, using sample entropy.
+**Measures.** Coefficient of variation of breath durations, and the root mean square of successive differences.
 
-**Test.** Intraclass correlation coefficient for each measure, two-way random effects, absolute agreement, single measurement. **[SIM]**
+**Sample entropy is dropped.** The draft previously named it as a third measure while conceding that thirty breaths is a small basis for an entropy-type statistic and that it would be demoted if a reliability check failed. Preregistering a measure that the same paragraph half-disowns is worse than not preregistering it. Two measures, both stable at this breath count and both computed by validated code, replace three. H5's decision rule is correspondingly two coefficients rather than three.
 
-**Caveat.** Thirty breaths is a small basis for entropy-type measures, which are known to be unstable at short lengths. The entropy measure is reported with an explicit reliability check and treated as secondary if that check fails.
+**Test.** Intraclass correlation coefficient for each measure, two-way random effects, absolute agreement, single measurement.
+
+**Decision rule.** For each measure, the lower 95% bound of the coefficient exceeds **0.75**. This is a stated smallest effect of interest: no observed agreement coefficient is available, because every agreement coefficient is blocked by Section 1.7.
 
 **Scope note.** RQ5 asks about variability over time generally, while this test uses only the free-breathing blocks. Variability during paced blocks is constrained by the pacer and is therefore not informative about spontaneous variability. This restriction is deliberate.
 
-**For simulation.** Requires: expected agreement coefficient per measure; between-participant variance in each measure; breaths per block.
+**Parameters used.** Target 0.75; between-participant standard deviation of the coefficient of variation 0.108 and of the root mean square of successive differences 839.5 ms, both from the internal pilot. As with H2, the expected agreement level is stated rather than observed, so the curve shows how precision grows with sample size at that assumed effect. H5 reaches 0.80 power at 40 enrolled and 0.96 at 60.
 
 ## 5.8 H6: Within-session stability
 
@@ -609,14 +730,26 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 **Tests.**
 
-1. **Stability.** Paired comparison of the agreement measure between pre and post blocks, tested for equivalence rather than for difference, since the prediction is no change. **[SIM]**
+1. **Stability.** Paired comparison of the agreement measure between pre and post blocks, tested for equivalence rather than for difference, since the prediction is no change. **Margin: 0.05 on the coefficient of variation scale.** Against a typical coefficient of variation near 0.15, that is a third of the measure: the smallest pre-to-post change that would count as the belts degrading with wear. Stated smallest effect of interest.
 2. **Moderation.** Mixed-effects model with agreement as outcome and the signal quality index as predictor, over rolling windows across the whole session, controlling for elapsed time. The prediction is that quality carries the effect and elapsed time does not.
 
 **Time base.** Elapsed wall-clock time, not trial index. Trials are participant-initiated, and inter-trial time exceeds task time, so the two are only loosely coupled.
 
-**Quality index tuning.** The index is not recorded during sessions and must be computed offline. Its degradation threshold will be tuned on these data rather than carried over from the pilot recording used to set the live software's values. Tuning procedure to be specified before analysis. **[SIM]**
+**Quality index: no threshold enters the confirmatory test.** Earlier drafts deferred a "tuning procedure" for the index's degradation threshold. Specifying one turned out to be the wrong problem to solve, because tuning a cut point on the same data that H6 is tested on invites exactly the leak this design exists to prevent: a threshold chosen to maximise the moderation effect would manufacture the result H6 test 2 predicts. Three commitments replace it.
 
-**For simulation.** Requires: expected pre-to-post change in agreement; equivalence margin on that change; expected relationship between quality index and agreement; number of rolling windows per session.
+**1. The moderation test uses the index continuously.** In H6 test 2 the signal quality index enters as a continuous predictor, standardised within participant, with no dichotomisation at any value. No threshold is required for the hypothesis, so none is tuned. Continuous use is also the more powerful form, so nothing is given up.
+
+**2. The flag in Section 5.2 uses a fixed, interpretable anchor: 0.50.** The index is an explained-variance ratio, so 0.50 is the point below which less than half of the movement variance in the window lies along the calibrated breathing direction. That is a meaning, not a percentile, and it requires no reference to the data. Windows below it are flagged and reported. Flagging never excludes, per Section 5.2.
+
+**3. Whether 0.50 sits sensibly in this data's distribution is checked, and reported, but cannot move it.** The distribution of window-level index values will be reported alongside the flag rate. The index is computed from raw acceleration and the calibration weights only, so it is a single-device signal property and involves no between-device quantity. If 0.50 turns out to fall in an uninformative part of the distribution, that is reported as a limitation of the flag. **The anchor is not moved after the distribution is seen**, and no alternative threshold is substituted.
+
+This closes the last **[SIM]** in the document.
+
+**H6 is the binding constraint on sample size.** It reaches 0.80 power at **75 enrolled** and only 0.70 at 60. Every other confirmatory hypothesis clears 0.80 at or below 60. The target in Section 1.2 is set by this test.
+
+The reason is structural rather than incidental. H6 has the fewest observations per participant of any confirmatory hypothesis: two free-breathing blocks, so exactly one pre-to-post difference per person. Where H1 averages roughly 42 breaths per participant before comparing across people, H6 has a single number each, so its precision comes almost entirely from the number of participants.
+
+**Parameters used.** Margin 0.05; between-participant standard deviation of the coefficient of variation 0.108, from the internal pilot; assumed true change one quarter of the margin. Below about 20 enrolled the power is zero rather than merely low, because the margin is then narrower than the confidence interval and no sample can bound it at all.
 
 ## 5.9 H7: Downstream equivalence
 
@@ -626,12 +759,27 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 **Tests.**
 
-1. **Classification agreement.** Compute the direction-correct classification separately from each device, for every trial. Agreement measured by Cohen's kappa, which corrects for agreement expected by chance. **[SIM]**
-2. **Coefficient equivalence.** Fit the same model twice, once with each device supplying the breath-duration predictor. Test whether the two coefficients are equivalent within a margin, using the two one-sided tests procedure on the difference. **[SIM]**
+1. **Classification agreement.** Compute the direction-correct classification separately from each device, for every trial where the cued change is non-zero.
+
+   **The decision statistic is Gwet's AC1, not Cohen's kappa.** Decision rule: AC1 lower 95% bound above **0.80**. Kappa and raw percent agreement are reported alongside as descriptives, without thresholds.
+
+   Kappa was the original rule and is **degenerate for this design**. The direction-correct base rate sits near 0.95, because participants are following a visible pacer and most trials classify correctly. At that prevalence, chance agreement is almost as high as observed agreement, so kappa collapses: in simulation it reads about +0.19 at **zero** injected between-device bias, already far below any usable floor, and it is **non-monotonic** in the bias it is supposed to track, reading +0.19, +0.04, +0.06 and +0.14 at biases of 0, 100, 200 and 400 ms. A rule that fails when the devices agree perfectly cannot discriminate device quality.
+
+   This possibility was anticipated. Percent agreement and AC1 were already preregistered as companion descriptives specifically so that a prevalence artefact would be diagnosable rather than fatal. It was diagnosed, and AC1 is promoted to the rule. Both companions behave monotonically: across the same bias range percent agreement runs 0.914, 0.905, 0.882, 0.809 and AC1 runs 0.904, 0.893, 0.864, 0.759.
+
+2. **Coefficient equivalence.** Fit the same model twice, once with each device supplying the breath-duration predictor. Test whether the two coefficients are equivalent within a margin, using the two one-sided tests procedure on the difference. **Margin: 75 ms**, half of H1's. A coefficient shift smaller than that cannot move a conclusion if the durations themselves are equivalent to within 150 ms. Stated smallest effect of interest, and it tracks H1: when H1's margin was tightened from the 300 ms ceiling to 150 ms, this followed to 75 ms rather than being re-chosen.
+
+3. **Device-specific missingness.** The rate at which one device yields a classification and the other does not is reported **as part of the decision, not as a footnote**.
+
+   This matters more than it appears. The classification is undefined when the breaths it needs were not detected, and in a two-device comparison the accelerometer may fail where the stretch belt succeeds. Any agreement coefficient needs complete pairs, so those trials drop silently out of the very analysis meant to detect them. **A device that yields no answer is not equivalent to one that yields the right answer.** Note also that averaging with missing values removed lets a pair mean be computed from a single detected breath, so partial detection degrades quietly rather than becoming missing. Both the missingness rate and the rate of single-breath pair means are reported.
 
 **Note.** This is the decisive hypothesis for the study's practical claim. H1 through H5 can all pass while H7 fails, if the disagreements happen to fall where they matter.
 
-**For simulation.** Requires: expected classification agreement; the base rate of direction-correct classifications; the equivalence margin on coefficients; trials per participant.
+**Trial count is smaller than it looks.** Catch trials carry no cued change and therefore never receive a classification. Trials arrive in shuffled blocks of five with one catch trial, so H7 rests on roughly **four fifths** of Block 4, not all of it. In Block 3 the unchanged condition is excluded for the same reason, leaving 6 of 9 trials. Simulating 25 Block 4 trials per participant would overstate H7's information by about 20%, and the simulation excludes them explicitly.
+
+**Base rate is assumed, not observed.** Section 5.12 note 5 forbids taking an effect size from the internal pilot, and the prior study's data is not available to this project, only its scripts. The base rate is therefore derived from the design and from the breath-duration noise the pilot did license, with participant adherence to the pacer assumed at 0.80. The derivation and its sensitivity are in Section 5.13.
+
+**Parameters used.** AC1 floor 0.80; coefficient margin 75 ms. Power is 0.98 at 10 enrolled and 1.00 from 20 upward, so H7 does not constrain the design.
 
 ## 5.10 H8: Alertness and adherence
 
@@ -639,9 +787,11 @@ The same quantity carries the opposite role in H8. Here, deviation from the pace
 
 **Unit.** Block 4 trial. Approximately 25 per participant.
 
-**Test.** Mixed-effects model with adherence as outcome and alertness as predictor, alertness centred within participant to isolate within-person fluctuation from between-person differences. Random intercepts and slopes by participant. Fitted separately for each device, then tested for equivalence of the alertness coefficient across devices. **[SIM]**
+**Test.** Mixed-effects model with adherence as outcome and alertness as predictor, alertness centred within participant to isolate within-person fluctuation from between-person differences. Random intercepts and slopes by participant. Fitted separately for each device, then tested for equivalence of the alertness coefficient across devices. **Margin: 75 ms** of adherence per standard deviation of alertness, half of H1's, on the same reasoning as H7's coefficient test. Stated smallest effect of interest.
 
-**For simulation.** Requires: expected within-participant alertness effect; within-participant variance in alertness ratings; equivalence margin on the between-device difference; trials per participant.
+**Note on what is and is not tested.** The equivalence test concerns the **between-device difference** in the alertness coefficient. Whether alertness predicts adherence at all is reported per device but is not the confirmatory claim, since a relationship that is absent on both devices is still equivalent across them.
+
+**Parameters used.** Margin 75 ms; Block 4 trial count drawn per participant rather than fixed. H8 reaches 0.80 power at 15 enrolled and 1.00 from 40 upward, so it does not constrain the design. H8 is the one test the margin tightening moved materially: at the former 150 ms margin it cleared 0.80 by 10 enrolled, and at 75 ms it needs 15. That is still far below the target.
 
 ## 5.11 Exploratory analyses
 
@@ -660,15 +810,36 @@ Route (b) is not appropriate for this hypothesis. Narrow band-passing discards e
 
 **Measure.** Magnitude-squared coherence across the respiratory band, a frequency-resolved measure bounded 0 to 1 that asks whether the two signals hold a consistent amplitude ratio and phase relationship at each frequency.
 
-**Caveat on estimation.** Coherence is biased upward when few independent segments are available. At 0.25 Hz, 120 s of free breathing yields very few. Welch segment length and overlap will be specified in advance, and significance assessed against a null built by phase-randomising one signal, rather than against a fixed threshold. Individual Block 3 and Block 4 trials are too short to support coherence at all; for those, shape is assessed instead by correlating time-normalised individual breath cycles between devices.
+**Estimation parameters, fixed in advance.** Coherence is biased upward when few independent segments are available: with *K* segments, the expected coherence between two unrelated signals is approximately 1/*K*, not zero. At 0.25 Hz, 120 s of free breathing yields few enough segments that this bias is the dominant estimation concern, so the parameters are chosen to trade frequency resolution against it explicitly.
+
+| Parameter | Value | Consequence |
+|---|---|---|
+| Sampling rate | 25 Hz | 120 s block gives 3,000 samples |
+| Segment length | 512 samples, 20.5 s | Frequency resolution 0.049 Hz |
+| Overlap | 50% | About 10 segments per block |
+| Window | Hann | Standard sidelobe control |
+
+At a respiratory fundamental near 0.25 Hz this places roughly five bins below the fundamental, which is enough to separate it from the 0.05 Hz high-pass corner, while ten segments hold the null coherence near 0.1 rather than the 0.2 that a 40 s segment would give.
+
+Longer segments were rejected: 1,024 samples would sharpen resolution to 0.024 Hz but leave only about five segments, doubling the upward bias in the quantity being interpreted. Shorter segments were rejected in the other direction: 256 samples gives 0.098 Hz resolution, which is too coarse to separate the fundamental from the filter corner.
+
+**Significance is assessed against a phase-randomised null, not against a fixed threshold.** One signal is phase-randomised with its amplitude spectrum preserved, the coherence is recomputed, and this is repeated 1,000 times to build a per-frequency null distribution. The 95th percentile of that distribution is the reference. This absorbs the segment-count bias directly, because the surrogate coherences carry the same bias as the observed one.
+
+Individual Block 3 and Block 4 trials are too short to support coherence at all, at roughly 16 s against a 20.5 s segment. For those, shape is assessed instead by correlating time-normalised individual breath cycles between devices.
 
 **Free by-product.** The phase spectrum of the coherence gives a frequency-resolved lag estimate. If the device offset is a true time delay, phase rises linearly with frequency. If it is a fixed mechanical phase shift, phase is flat. Reported either way, as it bears on how lag should be corrected.
 
+**Duty cycle carries a rate-dependent bias, and EH2 must control for it.** Measuring the inspiratory fraction through a band-limited signal inflates it, and the inflation grows with breathing rate: at a true duty cycle of 0.30 the measured value runs from about 0.31 at 7.5 breaths per minute to about 0.34 at 30. Any manipulation that also changes breathing rate therefore produces a duty-cycle change of the same sign for free. Blocks 3 and 4 change rate by design, and EH2 predicts an inverted U across rate, so imposed rate is included as a covariate in every shape analysis and the uncorrected values are reported alongside. This is preregistered because it would otherwise be indistinguishable from the predicted effect.
+
 **EH3. Calibration model as hidden moderator.**
 
-- Descriptive: how often each of the six candidate models is selected, across participants.
+- Descriptive: how often each of the **three** candidate models is selected, across participants, and the distribution of the winner's margin over the runner-up.
 - Test: whether the selected model predicts subsequent agreement between devices, and whether calibration fit predicts agreement independently of which model won.
 - Rationale: participants running under different transformations are not running the same measurement, so this checks whether that heterogeneity matters.
+
+**EH3 is interpreted only where selection is meaningful, and on this pilot it largely is not.** The three accelerometer axes are projections of one chest movement and are therefore strongly collinear, so many weight vectors reconstruct the breathing about equally well and the models score within noise of each other. In the internal pilot the winning model's margin over the runner-up had a **median of 0.013**, and 17 of 18 participants selected the same model. On that evidence the selected label is close to arbitrary and EH3 is expected to find nothing regardless of whether the underlying idea is right. It is retained as descriptive, with the margin reported alongside, and no result from it is interpreted where the margin is small.
+
+Note also that nothing is interpreted from the calibration coefficients themselves. Under collinear axes the weights are not identified even when the reconstruction is excellent.
 
 **EH4. Directional consistency with prior findings.**
 
@@ -690,42 +861,183 @@ Route (b) is not appropriate for this hypothesis. Narrow band-passing discards e
 
 ## 5.12 Parameters required for the power simulation
 
-Consolidated. Every quantity below must be assigned a plausible value before simulation.
+Consolidated, with the values actually used. Section 5.13 reports the resulting power.
 
 ### Design parameters, known
 
 | Parameter | Value |
 |---|---|
 | Block 3 trials per participant | 9 |
-| Block 4 trials per participant | 20 to 60; observed 25 |
-| Paced breaths per participant | ~136 |
-| Free-breathing breaths per participant | ~60 |
-| Total breaths per participant | ~196 |
+| Block 4 trials per participant | median 25, range 24 to 35 observed; 20 to 60 by stopping rule |
+| Paced breaths per participant, nominal | ~136 |
+| Free-breathing breaths per participant, nominal | ~60 |
+| Total breaths per participant, nominal | ~196 |
+| **Matched breaths usable per participant** | **~42** |
+| **Participant yield** | **13 of 18** |
 | Free-breathing duration | 2 blocks of 120 s |
 | Distinct imposed rates, Block 3 | 3 |
 | Timestamp jitter, standard deviation | 35 ms |
 
-### Effect sizes and margins, to be assumed
+### Variance components, from the internal pilot
 
-| Hypothesis | Parameter |
+Nuisance parameters only. None appears in a decision rule.
+
+| Parameter | Value |
 |---|---|
-| H1 | Equivalence margin on breath duration (ms); within- and between-participant variance of the difference |
-| H2 | Expected match proportion; onset timing difference distribution; tolerance window; thresholds for detection score and count agreement |
-| H3 | Equivalence bounds on duration by rate interaction; expected slope of depth error on rate |
-| H4 | Equivalence margin on the between-device difference in mean absolute error; expected magnitude of that difference. The per-device error itself is descriptive and does not drive power |
-| H5 | Expected agreement coefficient per variability measure; between-participant variance |
-| H6 | Expected pre-to-post change; equivalence margin; quality index effect size |
-| H7 | Expected classification agreement; base rate of direction-correct; coefficient equivalence margin |
-| H8 | Within-participant alertness effect; alertness rating variance; between-device equivalence margin |
+| Between-participant SD of duration bias | **35.3 ms**, the 95% profile upper bound. The point estimate was 0, at the boundary |
+| Within-participant SD of breath-level differences | 308.2 ms |
+| Between-participant SD of depth bias | 0.152 z |
+| Between-participant SD of the coefficient of variation | 0.108 |
+| Between-participant SD of the successive-difference measure | 839.5 ms |
+| Alignment residual SD | median 95.2 ms |
+| Calibration fit | median 0.586 uncorrected, 0.697 lag-adjusted |
+| Belt-to-pacer offset | median +80 ms, range -640 to +720 ms |
+| Model margin over runner-up | median 0.013 |
+
+### Margins and assumed effects
+
+One is derived; the rest are stated smallest effects of practical interest.
+
+| Hypothesis | Parameter | Value | Source |
+|---|---|---|---|
+| H1 | Equivalence margin, breath duration | **150 ms** | Set below the derived ceiling, Section 5.13 |
+| H1 | Derived ceiling, for the record | 300 ms | **Derived from H7**, Section 5.13 |
+| H2 | Detection score threshold | lower bound above 0.85 | Stated |
+| H2 | Tolerance, paced / free | 150 ms / 400 ms | Jitter, plus the Section 5.1 offset |
+| H2 | Count agreement threshold | lower bound above 0.75 | Stated |
+| H3 | Equivalence bound, duration by rate | 0.05 | Stated |
+| H4 | Equivalence margin, difference in mean absolute error | 150 ms | Follows H1 |
+| H5 | Agreement threshold per measure | lower bound above 0.75 | Stated |
+| H6 | Equivalence margin, pre-to-post change | 0.05 on the CV scale | Stated |
+| H7 | Classification agreement floor | AC1 lower bound above 0.80 | Stated |
+| H7 | Coefficient equivalence margin | 75 ms | Half of H1 |
+| H8 | Between-device margin, alertness slope | 75 ms | Half of H1 |
+| H7 | Assumed pacer adherence | 0.80 | Assumed; see Section 5.13 |
+| All | Assumed true effect | one quarter of the margin | Fixed in advance |
+| All | Alpha | 0.05 | Conventional |
+
+**H2's 150 ms tolerance and H1's 150 ms margin are unrelated quantities that now coincide numerically.** H2's is a matching window on onset times, set by timestamp jitter. H1's is an equivalence margin on breath durations, set below the H7-derived ceiling. Neither was chosen with reference to the other, and changing one does not imply changing the other.
 
 ### Notes for the simulation
 
-1. **The binding constraint is H3, H5, H6, H7, or H8.** With the interoception questions moved to exploratory, no analysis operates at the participant level with a single observation per person. Requirements now sit in the range of roughly 40 to 96 participants, driven by the equivalence margins rather than by the design. Sample size should be set by whichever of these requires most.
+1. **The binding constraint is H6.** This was anticipated as one of H3, H5, H6, H7 or H8, in a range of roughly 40 to 96 participants. It is H6, at 75, which sits inside that range. H6 has the fewest observations per participant of any confirmatory test, exactly one pre-to-post difference each, so its precision comes almost entirely from the number of participants.
 2. **Equivalence tests dominate.** Six of the eight confirmatory hypotheses rest on equivalence testing, which typically needs larger samples than a difference test at the same margin. Margins should be justified as smallest effects of practical interest, not chosen for convenience.
 3. **Block 4 trial count is a random variable**, governed by the stopping rule, not fixed. The simulation should draw it from a plausible distribution rather than fix it at 25, and should reflect that the trial cap truncates the upper tail.
 4. **Exploratory analyses are not part of the sample size calculation.** EH1 through EH4 are reported at whatever precision the confirmatory sample affords. EH4 in particular would need well over 200 participants to test confirmatorily, which is out of scope.
 5. **Variance parameters come from the internal pilot; effect sizes do not.** Section 1.7 sets out exactly what is extracted and what is blocked. Margins and expected effects must come from prior literature or from stated smallest effects of interest, since no effect-size quantity is observed before the confirmatory analysis.
 6. **Assume a non-zero true bias.** Equivalence power peaks when the true difference is zero. The simulation assumes a bias of one quarter of the margin, so that the sample size does not rest on the most favourable case.
+7. **Power is computed on analysable, not enrolled, participants.** Five of 18 pilot participants yielded no usable matched breaths. Every curve is drawn against enrolled participants but evaluated after that attrition.
+
+---
+
+## 5.13 Power simulation: method and result
+
+One data-generating function serves the whole study, rather than one script per hypothesis, because the hypotheses share parameters and separate scripts let those drift out of sync. Power is computed **analytically** for H1, H4 and H6, where a two one-sided tests procedure on a participant-level mean has a known sampling distribution and simulating would only add Monte Carlo error, and by **simulation** for H2, H3, H5, H7 and H8. The analytic function was verified against brute-force simulation across six configurations and agreed to within 0.004.
+
+### Deriving H1's margin ceiling from H7, then setting the margin below it
+
+A systematic bias of X milliseconds is injected into one device's breath durations, the direction-correct classification is recomputed on both devices, and X is increased until between-device classification agreement falls below its acceptable level. That X is the smallest duration disagreement that would materially change a downstream conclusion.
+
+The base rate is assumed, not observed, as Section 5.12 note 5 requires. It is derived from the design and from the breath-duration noise the pilot licensed, with pacer adherence assumed at 0.80, giving a direction-correct rate near 0.95.
+
+**Derived ceiling: 300 ms**, the first bias at which Gwet's AC1 lower 95% bound falls below 0.80.
+
+**Preregistered margin: 150 ms.** The derivation bounds what may be *tolerated*; it does not say what should be *claimed*. Three numbers frame the choice: the derived ceiling at 300 ms, the 0.80-power floor at roughly 27 ms, and the preregistered margin between them at 150 ms. Setting it at the ceiling would claim far less than the design supports; setting it near the floor would risk failing on a margin choice rather than on the instrument. Halving the ceiling is free in sample size, since the target is set by H6.
+
+A check is built into `simulation/run_power_analysis.R`: if the derivation ever returns a ceiling below the preregistered margin, the script stops rather than silently proceeding, because the margin would then be admitting biases H7 says are consequential.
+
+Percent agreement and AC1 across the swept range, both monotonic:
+
+| Injected bias | 0 | 100 | 200 | 400 |
+|---|---|---|---|---|
+| Percent agreement | 0.914 | 0.905 | 0.882 | 0.809 |
+| Gwet AC1 | 0.904 | 0.893 | 0.864 | 0.759 |
+| Cohen's kappa | +0.19 | +0.04 | +0.06 | +0.14 |
+
+The kappa row is why the decision statistic changed; see Section 5.9.
+
+### Power by sample size
+
+Enrolled participants, with attrition applied.
+
+| N | H1 | H2 | H3 | H4 | H5 | H6 | H7 | H8 |
+|---|---|---|---|---|---|---|---|---|
+| 10 | 0.99 | 0.18 | 0.33 | 0.99 | 0.34 | 0.00 | 0.98 | 0.65 |
+| 20 | 1.00 | 0.42 | 0.75 | 1.00 | 0.63 | 0.00 | 1.00 | 0.94 |
+| 30 | 1.00 | 0.56 | 0.92 | 1.00 | 0.75 | 0.27 | 1.00 | 0.99 |
+| **40** | 1.00 | 0.71 | 0.96 | 1.00 | 0.88 | 0.46 | 1.00 | 1.00 |
+| 50 | 1.00 | 0.78 | 0.99 | 1.00 | 0.94 | 0.61 | 1.00 | 1.00 |
+| 60 | 1.00 | 0.86 | 1.00 | 1.00 | 0.96 | 0.70 | 1.00 | 1.00 |
+| **75** | 1.00 | 0.93 | 1.00 | 1.00 | 0.99 | **0.80** | 1.00 | 1.00 |
+| 90 | 1.00 | 0.96 | 1.00 | 1.00 | 1.00 | 0.87 | 1.00 | 1.00 |
+| **100** | 1.00 | 0.97 | 1.00 | 1.00 | 1.00 | 0.90 | 1.00 | 1.00 |
+
+Bold rows are the three points fixed by the sampling plan: the interim re-estimation at 40, the target at 75, and the hard cap at 100.
+
+**Three columns are not what they appear, and should be read with the qualifications attached rather than at face value.**
+
+| Column | What the number actually is |
+|---|---|
+| **H4** | H1's participant-level variance applied to H4's margin. H4's own variance is a between-device difference in error against the pacer, which is blocked, so it cannot be estimated under blinding. Read this as "not separately estimable", not as 1.00 |
+| **H2** | Precision growth at a **stated** match proportion. Match proportion is blocked, so this is not a prediction of the effect |
+| **H5** | Precision growth at a **stated** agreement level, for the same reason |
+
+Only H1, H3, H6, H7 and H8 rest on a variance the pilot licensed for the quantity actually being tested.
+
+Smallest N reaching 0.80: H6 at 75, H2 at 60, H5 at 40, H3 at 25, H8 at 15, and H1, H4 and H7 at 10 or below.
+
+**These figures already reflect the tightened margins.** H1 and H4 run at 150 ms rather than the 300 ms ceiling, and H7's coefficient test and H8 at 75 ms rather than 150 ms. Halving every margin moved exactly one hypothesis: H8, from 10 enrolled to 15. H6 is unchanged at 75, so the stronger claims cost nothing in recruitment.
+
+**The target is set entirely by H6**, the pre-to-post change in the coefficient of variation, and H6 depends on one pilot variance component: a between-participant CV spread of 0.1079, estimated from 18 participants.
+
+That estimate carries its own sampling error, and it is larger than it may appear. Under normal theory the relative standard error of a standard deviation estimated from *n* observations is approximately 1/sqrt(2(n-1)), which at n = 18 is **17.1%**. The bands below are therefore multiples of that standard error rather than round percentages, so the table states the uncertainty the design actually faces:
+
+| Assumed CV spread | Power at N = 75 | N for 0.80 power |
+|---|---|---|
+| 0.0894 (1 SE lower) | 0.92 | 53 |
+| **0.1079 (pilot estimate)** | **0.80** | **75** |
+| 0.1264 (1 SE higher) | 0.67 | 103 |
+| 0.1449 (2 SE higher) | 0.52 | 133 |
+
+**A one standard error band on this single parameter spans a target of 53 to 103.** That is the honest statement of what is known about the sample size at this point, and it is wider than the initial draft of this section implied by using illustrative ten per cent bands. The point estimate remains the basis for the target, since it is the best available and the design must state a number, but the width is why the interim re-estimation matters and why the hard cap must sit above 75.
+
+Note the asymmetry. Overshooting the target costs participants; undershooting costs the hypothesis. If the true spread is one standard error above the estimate, recruiting to 75 and stopping leaves H6 at **0.67 power**, which is below the level at which a null result is interpretable.
+
+### What precision the design actually buys
+
+The flat curves invite the wrong reading, that these tests are powerful. They are not powerful; they are undemanding. The useful question is the inverse one: holding power fixed, how small a margin could this design defend?
+
+The participant-level standard deviation of the duration-bias mean is
+
+> sqrt( 35.3^2 + 308.2^2 / 42 ) = **59.2 ms**
+
+so at 75 enrolled, meaning 54 analysable, the standard error on that mean is about 8.1 ms. The smallest margin reaching each power level, on the same scale as H1 and H4:
+
+| N enrolled | N analysable | Margin at 0.80 power | Margin at 0.90 power |
+|---|---|---|---|
+| 50 | 36 | 33.8 ms | 39.5 ms |
+| 60 | 43 | 30.8 ms | 36.0 ms |
+| **75** | **54** | **27.4 ms** | **32.0 ms** |
+| 90 | 65 | 24.9 ms | 29.1 ms |
+| 110 | 79 | 22.5 ms | 26.3 ms |
+
+This is what moved H1's margin. The originally derived 300 ms ceiling was roughly **eleven times** looser than the design could support. The preregistered 150 ms is about **5.5 times** the floor, which is deliberate headroom rather than slack.
+
+**Why not simply preregister 27 ms.** The table inherits the convention of Section 5.12, that the assumed true bias is one quarter of the margin, so margin and assumed effect shrink together. If the true between-device bias is genuinely near zero, a margin near 27 ms is establishable. If the true bias is, say, 100 ms, then no margin below about 100 ms can be established at any sample size whatever, and preregistering 27 ms would convert a study that succeeds into one that fails for reasons unrelated to the instrument's adequacy. The achievable bound depends on the answer and therefore cannot be fixed in advance.
+
+There is a specific reason to expect the true duration bias to be small, which is part of why 150 ms is defensible: **a constant between-device onset offset cancels in a duration**, since a duration is a difference of two onsets. The block-dependent offset predicted in Section 5.1 is an onset effect, and it contaminates H1 only to the extent that it *varies* within a block rather than sitting at a constant value. That is an argument for a tight margin, not a guarantee, which is why the headroom is retained.
+
+**The commitment that remains.** Alongside the preregistered decision at 150 ms, we will report the **achieved equivalence bound**: the smallest margin at which both one-sided tests still reject, computed as the larger of the two absolute 90% confidence limits on the participant-level mean, that being the interval corresponding to two one-sided tests at 0.05. That number is a direct readout of what the data support, it is bounded below by the table above, and it costs nothing in sample size. It converts the saturated tests from "passed a fixed test" into a quantitative statement of agreement. The 150 ms margin remains the confirmatory decision rule, so this adds information without re-tuning a preregistered claim after the fact.
+
+### Honest limits of this analysis
+
+**Three curves are flat and therefore uninformative.** H1, H4 and H7 are saturated across the whole range, at 0.98 or above from 10 enrolled. That follows from a between-participant standard deviation of 35.3 ms against margins of 75 to 150 ms, and it is a real consequence of those margins rather than an artefact. Halving the margins from the derived ceiling narrowed the gap without closing it: 150 ms is still several times the precision available. The achieved equivalence bound above is the intended remedy. H8 is no longer in this group, having moved to 0.65 at 10 enrolled once its margin was halved.
+
+**H2 and H5 rest on stated rather than observed effects.** Match proportion and every agreement coefficient are blocked by Section 1.7, so no pilot value exists. Their curves show how precision grows with sample size at an assumed effect; they are not predictions of the effect itself.
+
+**H4 borrows H1's participant-level variance.** The estimands differ, and the correct variance cannot be obtained without disclosing an error relative to the pacer, which is blocked. Because H4 is saturated at every sample size, this does not affect the target.
+
+**The between-participant variance was estimated at a boundary.** See Section 1.7. The upper bound is used throughout; the point estimate of zero is not.
 
 ---
 
@@ -733,12 +1045,16 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 
 | Item | Status |
 |---|---|
-| BN-RSPEC datasheet bandwidth | **[NEEDS INPUT]** |
-| Sample size and interim re-estimation point | Pending power simulation; see Section 1.7 |
-| Pilot participant list | **[NEEDS INPUT]** |
-| All equivalence margins and thresholds | Pending power simulation |
-| Signal quality index tuning procedure | To be specified before analysis |
-| Welch parameters for the coherence analysis | To be specified before analysis |
+| BN-RSPEC bandwidth | **Resolved: DC to 10 Hz** respiration, 0.05 to 150 Hz ECG, Sections 1.3 and 1.6 |
+| Sample size | **Resolved: 75 enrolled**, Sections 1.2 and 5.13 |
+| Pilot participant list | **Resolved**, recorded in Section 1.7 |
+| All equivalence margins and thresholds | **Resolved**, Sections 5.12 and 5.13 |
+| Interim re-estimation point and hard cap | **Resolved: 40 and 100 enrolled**, Sections 1.2 and 1.7 |
+| H1's preregistered margin | **Resolved: 150 ms**, below the 300 ms derived ceiling, Sections 5.3 and 5.13 |
+| Signal quality index threshold | **Resolved: none required.** Continuous in H6, flagged at a fixed 0.50, Section 5.8 |
+| Welch parameters for the coherence analysis | **Resolved: 512 samples, 50% overlap, Hann**, Section 5.11 |
+
+**Nothing is outstanding.** Every equivalence margin, decision threshold, sample size parameter and analysis-procedure detail is now fixed and stated. The signal quality index item closed by removing the need for a threshold rather than by choosing one, since tuning a cut point on the data H6 is tested against would have been a route for the outcome to influence the rule.
 
 ## Limitations to state
 
@@ -747,3 +1063,11 @@ Consolidated. Every quantity below must be assigned a plausible value before sim
 3. **The rate range is narrow.** Block 3 spans 3 to 5 s. Claims about rate dependence rest largely on Block 4, where rates are sampled unevenly around each participant's own threshold.
 4. **Condition onset is computed, not measured.** The event code marking it was removed from the software to protect pacer timing. It is reconstructed as trial start plus two baseline breaths, and therefore inherits any jitter in the trial-start code.
 5. **Alignment absorbs browser clock wander.** The linear drift correction removes roughly 380 ms of divergence across a session. Analysis of the accelerometer timestamps shows a comparable amount of slow wander in the browser clock, so the correction is largely absorbing browser timing rather than acquisition-hardware error.
+
+6. **A large share of breaths does not survive matching.** Roughly 42 of about 196 nominal breaths per participant yield a usable between-device duration comparison, and in the internal pilot 5 of 18 participants yielded none at all. The strict rule that produces this is deliberate and is defended in Section 5.3, but it means the study measures agreement on the breaths both devices resolve cleanly, which is a more favourable subset than all breaths. H2 and the device-specific missingness reported under H7 are what speak to the breaths that do not survive; H1 should not be read as a statement about them.
+
+7. **Calibration quality is mixed.** Across the internal pilot the Block 1 fit had a median of 0.586 and a lower quartile of 0.350, with 5 of 18 participants below the 0.40 flag. Lag adjustment raises the median to 0.697, so much of the shortfall reflects the mechanical confound between fit and offset rather than poor weights. Poor calibration is flagged and retained, not excluded, but it plausibly explains the participants who contribute no usable matched breaths, and any conclusion about the accelerometer is a conclusion about it as calibrated by this brief procedure.
+
+8. **The margins remain wide relative to the measured precision, though less so than in the first draft.** H1, H4 and H7 are saturated at every sample size considered. The margins were halved before registration, H1 and H4 from the 300 ms derived ceiling to 150 ms and H7 and H8 from 150 ms to 75 ms, which strengthens the claims at no cost in recruitment. Even so, 150 ms on a breath of roughly 4000 ms is still about 5.5 times the 27 ms the design could support, so readers should take the margin, not the power, as the measure of what is being asserted, and should read the achieved equivalence bound committed to in Section 5.13 rather than the pass or fail at 150 ms.
+
+9. **The sample size rests on a single pilot variance component, known to about 17%.** The target of 75 is set by H6 alone, through a between-participant CV spread estimated from 18 participants. The relative standard error of that estimate is 17.1%, and a one standard error band on it spans a target of 53 to 103. The target is therefore a best estimate rather than a requirement, and the interim re-estimation is the mechanism that resolves it. See the sensitivity table in Section 5.13.
