@@ -1,0 +1,136 @@
+BreathBelt detector calibration
+Generated: 2026-08-07 15:46:10.759901 
+respkit snapshot: reference/respkit_snapshot (see PROVENANCE.txt)
+============================================================================== 
+
+PART 1. MEASUREMENT BAND
+
+Trough timing bias against each device's own waveform, ms.
+Positive = detector reports the trough late. Detection band 0.05-0.6 Hz
+throughout; only the measurement band varies. Synthetic, exact ground truth.
+
+--- biopac ---
+rows = period (s), cols = measurement band upper cutoff (Hz)
+    0.6     1     2     4
+2 -61.4 -49.7 -19.5  -7.5
+3 -80.3 -40.1 -17.8  -8.7
+4 -72.2 -38.3 -20.6 -18.6
+5 -61.1 -34.1 -14.3  -8.3
+6 -60.2 -34.3 -18.5 -21.8
+
+--- accel ---
+rows = period (s), cols = measurement band upper cutoff (Hz)
+    0.6     1     2    4
+2 -48.3  28.7  66.4 59.2
+3   0.7  89.5 108.5 83.0
+4  83.9 139.9 119.2 88.9
+5 151.1 171.3 141.3 89.3
+6 201.7 201.2 150.6 92.2
+
+Worst |single-device bias| over the sweep:
+  0.6 Hz :  293.3 ms
+  1.0 Hz :  281.9 ms
+  2.0 Hz :  199.0 ms
+  4.0 Hz :  121.9 ms
+
+Differential bias (accel minus biopac), by duty cycle.
+This is what survives into a between-device comparison; common-mode cancels.
+rows = duty cycle, cols = measurement band upper cutoff (Hz)
+       0.6     1     2     4
+0.35 241.9 252.6 197.5 135.4
+0.4  202.8 225.7 190.2 127.5
+0.45 134.7 183.2 152.9 115.1
+0.5    0.2   0.1   0.7   4.0
+
+CONCLUSION.
+The measurement band barely moves the DIFFERENTIAL: paired within seed and
+period, 2.0 Hz minus 0.6 Hz is within about 40 ms and its sign depends on
+duty cycle. It clearly improves the SINGLE-DEVICE bias, and respkit's own
+duty-cycle table puts 2.0 Hz at the knee. ONSET_MEASURE_BAND = 0.05-2.0 Hz.
+
+The finding that matters more than the band:
+At duty 0.50 the differential is ~0 at EVERY band. The whole effect is
+harmonic distortion from waveform asymmetry, since the accelerometer
+amplifies harmonic n by n^2. The BreathBelt pacer is (1-cos)/2, exactly
+symmetric, so:
+  paced blocks 3 and 4  duty near 0.50, differential offset near zero
+  free blocks 2 and 5   duty near 0.43 on respkit's 198-recording archive,
+                        giving a differential offset of roughly 135-225 ms
+The belt-to-pacer offset is fitted on Block 1, which is PACED and therefore
+symmetric, where this offset is zero. It cannot remove the free-breathing
+offset. Fitting one there would need between-device timing, which is H2's
+estimand and blocked. Hence H2's block-specific tolerance, prereg 5.4.
+
+==============================================================================
+
+PART 2. WHY SYNTHETIC CANNOT SET THE PROMINENCE THRESHOLD
+
+A negative result, recorded rather than tuned away. Three attempts to
+calibrate min_prominence synthetically returned an identical answer at
+every threshold from 0.10 to 0.80:
+  1. count against expected returned -2 everywhere (the two edge troughs)
+  2. a 1.1 Hz cardiac ripple changed nothing (the 0.6 Hz band removes it)
+  3. an in-band 2nd harmonic degraded detection badly but still not by
+     threshold, because the extrema it creates are large too
+
+The reason is visible in the prominence distribution. The detection band
+smooths broadband noise so thoroughly that synthetic recordings contain
+almost no low-prominence extrema, so the whole swept range lies below the
+synthetic floor:
+
+                   source n_maxima    min  q25 median  max
+ synthetic, noise SD 0.02       25 1.5365 1.92   1.94 2.02
+ synthetic, noise SD 0.30       25 1.6021 1.87   1.93 2.09
+ synthetic, noise SD 0.80       25 1.3999 1.81   2.01 2.38
+ synthetic, noise SD 1.50       27 0.0404 1.69   2.08 2.90
+
+Real signals carry the population of small ripples that a prominence
+threshold exists to remove. Same measurement, participant 14542:
+
+        source n_maxima      min   q25 median  max
+  14542, accel      453 0.000549 0.221  0.883 71.7
+ 14542, biopac      340 0.000248 0.691  1.830 10.2
+
+So the threshold is set from Part 3, which is the route Norm approved and
+what respkit prescribes: pick it by looking at what gets rejected, not by
+its effect on the summary statistics.
+
+==============================================================================
+
+PART 3. PROMINENCE, PARTICIPANT 14542
+
+Single-device quantities only. Breath count is whitelisted (Section 1.7).
+Nothing between-device is computed.
+
+--- biopac ---
+ prom n_onsets n_kept n_dropped med_dur_ms
+ 0.10      310    309         0       3680
+ 0.15      304    303         0       3680
+ 0.20      299    298         0       3700
+ 0.30      289    287         1       3760
+ 0.40      281    278         2       3800
+ 0.50      275    272         2       3800
+ 0.60      266    261         4       3840
+ 0.80      249    241         7       3840
+
+--- accel ---
+ prom n_onsets n_kept n_dropped med_dur_ms
+ 0.10      377    350        26       3200
+ 0.15      358    337        20       3320
+ 0.20      344    326        17       3360
+ 0.30      317    304        12       3560
+ 0.40      299    288        10       3680
+ 0.50      276    266         9       4040
+ 0.60      259    249         9       4040
+ 0.80      235    225         9       4200
+
+n_dropped counts intervals outside the 1500-12000 ms plausibility bounds.
+A threshold that is too low shows as a rising n_onsets with rising
+n_dropped: it is manufacturing short cycles out of noise ripples.
+
+Polarity check (respkit BeforeYouRun item 2).
+Median duty cycle; below 0.50 means the signal rises on inhalation.
+  accel   duty 0.526  ->  DOWN or undetermined - INSPECT
+  biopac  duty 0.449  ->  up (expected)
+
+No between-device quantity appears anywhere above.
