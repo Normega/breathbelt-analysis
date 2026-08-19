@@ -1,0 +1,70 @@
+BreathBelt: deriving H1's equivalence margin from H7
+Generated: 2026-08-15 14:18:08.060239 
+========================================================================== 
+
+METHOD (handoff Task 6). Inject a systematic bias of X ms into one
+device's breath durations, re-run the direction-correct classification,
+and take the X at which between-device classification agreement falls
+below an acceptable level. That X is the CEILING on the margin.
+
+NOTE ON WHAT THE DERIVATION IS FOR. It answers 'at what bias do downstream
+conclusions start to change', which bounds what may be TOLERATED. It does
+not say what should be CLAIMED. The preregistered margin is set tighter,
+since the design supports far more precision than the ceiling requires.
+
+DECISION STATISTIC: Gwet's AC1, lower 95% bound, floor 0.8 
+
+Cohen's kappa was the original rule (docs/discrepancies.md C3) and is
+DEGENERATE for this design. With a direction-correct base rate near 0.95,
+chance agreement is nearly as high as observed agreement, so kappa reads
+about +0.19 at ZERO injected bias, already far below any usable floor,
+and it is NON-MONOTONIC in the bias it is meant to track. C3 preregistered
+AC1 and percent agreement as companions precisely so a prevalence artefact
+would be diagnosable rather than fatal. It was diagnosed; AC1 is promoted
+to the decision rule and kappa is retained as a descriptive.
+Approved by Norm 2026-08-07.
+
+BASE RATE is assumed, not taken from the pilot (Section 5.12 note 5).
+Study 5's data is not vendored, so no empirical value exists; the rate is
+derived from the design and from the breath-duration noise the pilot did
+license, with adherence assumed at 0.8 
+
+ bias_ms agree   ac1 ac1_lo  kappa
+       0 0.913 0.903  0.886 0.1238
+      25 0.913 0.904  0.886 0.1158
+      50 0.912 0.903  0.884 0.1152
+      75 0.910 0.900  0.881 0.1175
+     100 0.906 0.895  0.876 0.1150
+     125 0.901 0.889  0.869 0.1126
+     150 0.896 0.882  0.868 0.1152
+     175 0.890 0.874  0.854 0.1145
+     200 0.884 0.867  0.843 0.1142
+     225 0.876 0.856  0.836 0.1133
+     250 0.867 0.844  0.822 0.1125
+     275 0.858 0.831  0.808 0.1114
+     300 0.848 0.818  0.792 0.1096
+     325 0.837 0.802  0.775 0.1040
+     350 0.829 0.790  0.763 0.1001
+     375 0.819 0.775  0.749 0.0973
+     400 0.807 0.756  0.730 0.0963
+     425 0.795 0.739  0.711 0.0908
+     450 0.783 0.720  0.688 0.0911
+     475 0.770 0.698  0.665 0.0817
+     500 0.760 0.683  0.650 0.0814
+     525 0.747 0.661  0.624 0.0722
+     550 0.736 0.643  0.616 0.0682
+     575 0.721 0.616  0.576 0.0670
+     600 0.710 0.597  0.561 0.0608
+
+DERIVED CEILING          : 300 ms
+PREREGISTERED H1 MARGIN  : 150 ms (50% of the ceiling)
+Tightening fixed by Norm 2026-08-14. Headroom over the 0.80-power floor
+of roughly 27 ms at the target N is about 5.5x 
+
+Margins that follow from it (STATED smallest effects of interest, not
+derived; Section 5.12 note 2):
+  H4 between-device mean absolute error : 150 ms
+  H6 pre-to-post change in CV           : 0.05 
+  H7 coefficient equivalence            : 75 ms
+  H8 alertness slope difference         : 75 ms
+  H3 duration-by-rate coefficient       : 0.05 
