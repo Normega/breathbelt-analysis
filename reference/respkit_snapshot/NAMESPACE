@@ -1,0 +1,79 @@
+# Hand-maintained. If you adopt roxygen2, run devtools::document() and
+# replace this file with the generated one.
+
+# --- recording container -------------------------------------------------
+export(resp_recording)
+export(is_resp_recording)
+export(as_resp_recording)
+export(resp_time)
+export(resp_duration)
+export(resp_slice)
+export(resp_provenance)
+S3method(print, resp_recording)
+S3method(summary, resp_recording)
+
+# --- io ------------------------------------------------------------------
+export(resp_write_rds)
+export(resp_read_rds)
+export(resp_read_acq)
+export(resp_acq_channels)
+export(trigger_edges)
+export(trigger_runs)
+export(resp_rds_is_legacy)
+export(resp_read_legacy_rds)
+export(legacy_decimation_factor)
+
+# --- one-call entry point ------------------------------------------------
+export(resp_analyse)
+
+# --- resampling ----------------------------------------------------------
+export(decimation_stages)
+export(resp_decimate)
+export(resp_downsample)
+
+# --- filtering and cleaning ---------------------------------------------
+export(resp_filter)
+export(resp_clip)
+export(resp_despike)
+export(resp_normalise)
+export(resp_normalize)
+export(resp_detrend)
+export(resp_preprocess)
+
+# --- detection -----------------------------------------------------------
+export(find_extrema_zerocross)
+export(find_extrema_prominence)
+export(peak_prominence)
+export(local_maxima)
+export(refine_extrema)
+export(enforce_alternation)
+export(resp_detect)
+
+# --- breath table and features ------------------------------------------
+export(breath_table)
+export(resp_polarity)
+export(flag_breaths)
+export(summarise_breaths)
+export(summarize_breaths)
+export(resp_variability)
+export(resp_rate_series)
+
+# --- epoching ------------------------------------------------------------
+export(resp_epochs)
+export(epoch_breaths)
+export(epoch_features)
+
+# --- quality -------------------------------------------------------------
+export(resp_quality)
+export(resp_flatline)
+export(resp_saturation)
+export(resp_psd)
+
+# --- plotting ------------------------------------------------------------
+export(plot_resp)
+export(plot_breaths)
+
+importFrom(stats, IQR, approx, fft, mad, median, quantile, runmed, sd)
+importFrom(utils, head, tail, modifyList)
+importFrom(graphics, abline, lines, mtext, par, points, rect, text)
+importFrom(grDevices, adjustcolor)

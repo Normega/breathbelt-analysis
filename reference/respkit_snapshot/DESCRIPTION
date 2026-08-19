@@ -1,0 +1,28 @@
+Package: respkit
+Type: Package
+Title: Reusable Tools for Respiratory Belt Signal Processing
+Version: 0.1.0
+Authors@R: person(given = "Norman", role = c("aut", "cre"),
+                  email = "norman@radlab.zone")
+Description: A dataset-agnostic toolkit for processing respiratory
+    signals recorded from strain-gauge belts, nasal thermistors, or
+    similar continuous respiration transducers. Provides a self-describing
+    recording container with honest sampling-rate bookkeeping, exact
+    multistage decimation, artefact cleaning, two peak/trough detection
+    algorithms, a per-breath morphology table (duration, inspiratory and
+    expiratory time, duty cycle, amplitude, respiratory volume per time),
+    window/epoch aggregation with variability metrics, and signal quality
+    assessment. Task-specific paradigm logic is deliberately excluded so
+    the same code can be reused across studies.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1)
+Imports:
+    signal,
+    stats,
+    utils,
+    graphics,
+    grDevices
+Suggests:
+    reticulate
+RoxygenNote: 7.3.2

@@ -1,0 +1,4 @@
+1. Run resp_quality() across the whole sample with iqr_unusable/iqr_degraded set to NA, plot filtered_iqr, pick a cut. The frequency, flatline and saturation tests transfer as-is; the amplitude ones are in your signal's units and are meaningless otherwise.
+2. Check res$polarity on every recording, not just one. It's free now.
+3. Sanity-check the rate ceiling against your paradigm before trusting any rate.
+4. If it's a new transducer, plot a minute of raw trace against the detected extrema (plot_resp(res$measure, detection = res$detection, from =, to =)) for a handful of participants. Ten minutes of looking is worth more than any of the automated screens.

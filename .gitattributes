@@ -1,0 +1,12 @@
+# Vendored snapshots are byte-exact and must round-trip unchanged.
+#
+# reference/respkit_snapshot/ carries a sha256 content fingerprint in its
+# PROVENANCE.txt, recomputed with:
+#
+#     find R inst tests DESCRIPTION NAMESPACE -type f | sort \
+#       | xargs sha256sum | sha256sum
+#
+# core.autocrlf is true on this machine, so without -text git would rewrite
+# LF to CRLF on checkout and that fingerprint would not reproduce on a fresh
+# clone. A pre-registration that pins a library version needs the pin to hold.
+reference/respkit_snapshot/** -text
